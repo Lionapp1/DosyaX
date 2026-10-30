@@ -33,9 +33,9 @@ class FileTile extends StatelessWidget {
       case FileKind.folder:
         return Colors.amber.shade600;
       case FileKind.image:
-        return Colors.emerald.shade500;
+        return Colors.green.shade500;
       case FileKind.video:
-        return Colors.rose.shade400;
+        return Colors.pink.shade400;
       case FileKind.audio:
         return Colors.purple.shade400;
       case FileKind.document:
