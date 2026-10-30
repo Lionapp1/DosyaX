@@ -193,7 +193,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       secondary: const Icon(Icons.grid_view_rounded),
                       title: const Text('Varsayilan izgara'),
-                      subtitle: const Text('Dosya listesinde grid acik gelsin'),
                       value: settings.preferGrid,
                       onChanged: settings.setPreferGrid,
                     ),
@@ -213,7 +212,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: Text(
                     settings.hasPrivatePin ? 'PIN ayarli' : 'PIN henuz yok',
                   ),
-                  subtitle: const Text('Ozel sekmesinden PIN belirleyebilirsin'),
                   trailing: settings.hasPrivatePin
                       ? TextButton(
                           onPressed: () async {
@@ -252,7 +250,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: Icon(Icons.info_outline_rounded),
                   title: Text('DosyaX'),
                   subtitle: Text(
-                    'v0.5.1 (51)\n'
+                    'v0.5.2 (52)\n'
                     'Paket: com.lionapp1.dosyax',
                   ),
                   isThreeLine: true,
