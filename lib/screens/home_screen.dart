@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../models/file_item.dart';
 import '../services/app_settings.dart';
 import '../services/private_vault.dart';
+import '../services/social_folders_service.dart';
 import '../services/storage_service.dart';
+import '../services/transfer_service.dart';
 import '../state/browser_controller.dart';
 import '../widgets/file_tile.dart';
 import 'image_viewer_screen.dart';
@@ -27,9 +29,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _browser = BrowserController();
     _browser.init();
-    // Apply preferred grid after settings load may race — safe default
+    SocialFoldersService.instance.ensureCreated().then((_) {
+      // refresh quick chips with Sosyal
+      _browser.init();
+    });
     if (!AppSettings.instance.preferGrid) {
-      // controller starts grid true; flip if needed after init
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!AppSettings.instance.preferGrid && _browser.grid) {
           _browser.toggleGrid();
@@ -118,6 +122,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _pickDestAndTransfer(FileItem item, TransferOp op) async {
+    final social = await SocialFoldersService.instance.ensureCreated();
+    final suggested = await SocialFoldersService.instance.suggestDestFor(item.path);
+    if (!mounted) return;
+
+    final dest = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final entries = social.entries.toList();
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(op == TransferOp.move ? 'Nereye tasinsin?' : 'Nereye kopyalansin?'),
+                subtitle: const Text('Islem arka planda devam eder — beklemene gerek yok'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome),
+                title: const Text('Akilli hedef (sosyal)'),
+                subtitle: Text(suggested),
+                onTap: () => Navigator.pop(ctx, suggested),
+              ),
+              const Divider(),
+              ...entries.map(
+                (e) => ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: Text(e.key),
+                  subtitle: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.pop(ctx, e.value),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.folder_special),
+                title: const Text('Bu klasor (mevcut konum degil)'),
+                subtitle: Text(_browser.currentPath),
+                onTap: () => Navigator.pop(ctx, _browser.currentPath),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (dest == null) return;
+    TransferService.instance.enqueue(
+      sourcePath: item.path,
+      destDir: dest,
+      op: op,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          op == TransferOp.move
+              ? 'Tasimaya alindi — arka planda suruyor'
+              : 'Kopyalamaya alindi — arka planda suruyor',
+        ),
+      ),
+    );
+  }
+
   void _itemSheet(FileItem item) {
     final cs = Theme.of(context).colorScheme;
     showModalBottomSheet(
@@ -125,80 +192,118 @@ class _HomeScreenState extends State<HomeScreen> {
       showDragHandle: true,
       backgroundColor: cs.surface,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: Text(item.name),
-              subtitle: Text('${item.sizeLabel}\n${item.path}'),
-            ),
-            const Divider(height: 1),
-            if (!item.isFolder)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               ListTile(
-                leading: const Icon(Icons.open_in_new_rounded),
-                title: const Text('Ac'),
+                leading: const Icon(Icons.info_outline),
+                title: Text(item.name),
+                subtitle: Text('${item.sizeLabel}\n${item.path}'),
+              ),
+              const Divider(height: 1),
+              if (!item.isFolder)
+                ListTile(
+                  leading: const Icon(Icons.open_in_new_rounded),
+                  title: const Text('Ac'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openMedia(item);
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.copy_rounded),
+                title: const Text('Kopyala (arka plan)'),
+                subtitle: const Text('Buyuk dosyalarda UI kilitlenmez'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _openMedia(item);
+                  _pickDestAndTransfer(item, TransferOp.copy);
                 },
               ),
-            if (!item.isFolder)
               ListTile(
-                leading: const Icon(Icons.lock_rounded),
-                title: const Text('Ozel alana kopyala'),
+                leading: const Icon(Icons.drive_file_move_rounded),
+                title: const Text('Tasi (arka plan)'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickDestAndTransfer(item, TransferOp.move);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share_location_rounded),
+                title: const Text('Sosyal klasore akilli kopyala'),
+                subtitle: const Text('IG / WA / TG / Threads otomatik'),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final ok = await PrivateVault.instance.importFile(item.path);
+                  final dest =
+                      await SocialFoldersService.instance.suggestDestFor(item.path);
+                  TransferService.instance.enqueue(
+                    sourcePath: item.path,
+                    destDir: dest,
+                    op: TransferOp.copy,
+                  );
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        ok ? 'Ozel alana kopyalandi' : 'Kopyalanamadi',
-                      ),
-                    ),
+                    SnackBar(content: Text('Sosyal hedefe alindi: $dest')),
                   );
                 },
               ),
-            if (!item.isFolder)
+              if (!item.isFolder)
+                ListTile(
+                  leading: const Icon(Icons.lock_rounded),
+                  title: const Text('Ozel alana kopyala'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final ok = await PrivateVault.instance.importFile(item.path);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          ok ? 'Ozel alana kopyalandi' : 'Kopyalanamadi',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (!item.isFolder)
+                ListTile(
+                  leading: const Icon(Icons.share_rounded),
+                  title: const Text('Paylas'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    StorageService.instance.share(item);
+                  },
+                ),
               ListTile(
-                leading: const Icon(Icons.share_rounded),
-                title: const Text('Paylas'),
+                leading: const Icon(Icons.drive_file_rename_outline_rounded),
+                title: const Text('Yeniden adlandir'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  StorageService.instance.share(item);
+                  _rename(item);
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline_rounded),
-              title: const Text('Yeniden adlandir'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _rename(item);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.copy_all_rounded),
-              title: const Text('Yolu kopyala'),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: item.path));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Yol kopyalandi')),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline_rounded, color: cs.error),
-              title: Text('Sil', style: TextStyle(color: cs.error)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final ok = await StorageService.instance.delete(item);
-                if (ok) _browser.refresh(force: true);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+              ListTile(
+                leading: const Icon(Icons.copy_all_rounded),
+                title: const Text('Yolu kopyala'),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: item.path));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Yol kopyalandi')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded, color: cs.error),
+                title: Text('Sil', style: TextStyle(color: cs.error)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final ok = await StorageService.instance.delete(item);
+                  if (ok) _browser.refresh(force: true);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -324,7 +429,6 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, b, _) {
           return Scaffold(
             backgroundColor: cs.surface,
-            // Prevents top bar jump when keyboard / insets change
             resizeToAvoidBottomInset: false,
             appBar: _appBar(b, cs),
             body: Column(
@@ -507,7 +611,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 _openMedia(item);
               }
             },
-            onLongPress: () => b.toggleSelect(item),
+            onLongPress: () {
+              if (b.selectMode) {
+                b.toggleSelect(item);
+              } else {
+                _itemSheet(item);
+              }
+            },
           );
         },
       ),
