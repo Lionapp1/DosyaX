@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
 import '../models/file_item.dart';
+import '../services/storage_service.dart';
+import '../state/browser_controller.dart';
 import '../widgets/file_tile.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -10,148 +15,428 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _grid = true;
-  String _query = '';
+  late final BrowserController _browser;
+  final _searchCtrl = TextEditingController();
 
-  final List<FileItem> _files = [
-    FileItem(
-      id: '1',
-      name: 'Indirilenler',
-      kind: FileKind.folder,
-      size: 0,
-      path: '/Download',
-      isFolder: true,
-      modified: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-    FileItem(
-      id: '2',
-      name: 'foto.jpg',
-      kind: FileKind.image,
-      size: 2450000,
-      path: '/foto.jpg',
-      isFolder: false,
-      modified: DateTime.now().subtract(const Duration(hours: 3)),
-    ),
-    FileItem(
-      id: '3',
-      name: 'rapor.pdf',
-      kind: FileKind.document,
-      size: 5120000,
-      path: '/rapor.pdf',
-      isFolder: false,
-      modified: DateTime.now().subtract(const Duration(days: 2)),
-    ),
-    FileItem(
-      id: '4',
-      name: 'video.mp4',
-      kind: FileKind.video,
-      size: 48200000,
-      path: '/video.mp4',
-      isFolder: false,
-      modified: DateTime.now().subtract(const Duration(days: 5)),
-    ),
-    FileItem(
-      id: '5',
-      name: 'yedek.zip',
-      kind: FileKind.archive,
-      size: 120000000,
-      path: '/yedek.zip',
-      isFolder: false,
-      modified: DateTime.now().subtract(const Duration(hours: 12)),
-    ),
-    FileItem(
-      id: '6',
-      name: 'main.dart',
-      kind: FileKind.code,
-      size: 12400,
-      path: '/main.dart',
-      isFolder: false,
-      modified: DateTime.now(),
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _browser = BrowserController();
+    _browser.init();
+  }
 
-  List<FileItem> get _filtered {
-    if (_query.isEmpty) return _files;
-    final q = _query.toLowerCase();
-    return _files.where((f) => f.name.toLowerCase().contains(q)).toList();
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _browser.dispose();
+    super.dispose();
+  }
+
+  Future<void> _newFolder() async {
+    final name = await _askText('Yeni klasor', 'Klasor adi');
+    if (name == null || name.trim().isEmpty) return;
+    final ok = await _browser.createFolder(name.trim());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Klasor olusturuldu' : 'Olusturulamadi')),
+    );
+  }
+
+  Future<void> _rename(FileItem item) async {
+    final name = await _askText('Yeniden adlandir', item.name, initial: item.name);
+    if (name == null || name.trim().isEmpty || name == item.name) return;
+    final ok = await _browser.renameItem(item, name.trim());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Ad degisti' : 'Basarisiz')),
+    );
+  }
+
+  Future<String?> _askText(String title, String hint, {String? initial}) {
+    final ctrl = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(hintText: hint),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Iptal')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _itemSheet(FileItem item) {
+    final cs = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: Text(item.name),
+              subtitle: Text('${item.sizeLabel}\n${item.path}'),
+            ),
+            const Divider(height: 1),
+            if (!item.isFolder)
+              ListTile(
+                leading: const Icon(Icons.open_in_new_rounded),
+                title: const Text('Ac'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  StorageService.instance.open(item);
+                },
+              ),
+            if (!item.isFolder)
+              ListTile(
+                leading: const Icon(Icons.share_rounded),
+                title: const Text('Paylas'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  StorageService.instance.share(item);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline_rounded),
+              title: const Text('Yeniden adlandir'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _rename(item);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_all_rounded),
+              title: const Text('Yolu kopyala'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: item.path));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Yol kopyalandi')),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline_rounded, color: cs.error),
+              title: Text('Sil', style: TextStyle(color: cs.error)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await StorageService.instance.delete(item);
+                if (ok) _browser.refresh();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('DosyaX'),
-        actions: [
-          IconButton(
-            tooltip: _grid ? 'Liste' : 'Izgara',
-            onPressed: () => setState(() => _grid = !_grid),
-            icon: Icon(_grid ? Icons.view_list_rounded : Icons.grid_view_rounded),
-          ),
-          IconButton(
-            tooltip: 'Ara',
-            onPressed: () {},
-            icon: const Icon(Icons.search_rounded),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: TextField(
-              onChanged: (v) => setState(() => _query = v),
-              decoration: InputDecoration(
-                hintText: 'Dosya veya klasor ara...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
-          ),
-          Expanded(
-            child: _filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      'Sonuc yok',
-                      style: TextStyle(color: cs.onSurfaceVariant),
+    return ChangeNotifierProvider.value(
+      value: _browser,
+      child: Consumer<BrowserController>(
+        builder: (context, b, _) {
+          final cs = Theme.of(context).colorScheme;
+          return Scaffold(
+            appBar: AppBar(
+              leading: b.selectMode
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => b.toggleSelectMode(false),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.arrow_upward_rounded),
+                      tooltip: 'Ust klasor',
+                      onPressed: b.goUp,
                     ),
-                  )
-                : _grid
-                    ? GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 0.85,
+              title: Text(
+                b.selectMode ? '${b.selectedCount} secili' : 'DosyaX',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              actions: [
+                if (b.selectMode) ...[
+                  IconButton(
+                    tooltip: 'Tumu',
+                    onPressed: b.selectAll,
+                    icon: const Icon(Icons.select_all_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Paylas',
+                    onPressed: () => b.shareSelected(),
+                    icon: const Icon(Icons.share_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Sil',
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Silinsin mi?'),
+                          content: Text('${b.selectedCount} oge silinecek.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Iptal'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Sil'),
+                            ),
+                          ],
                         ),
-                        itemCount: _filtered.length,
-                        itemBuilder: (_, i) => FileTile(item: _filtered[i], grid: true),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, i) => FileTile(item: _filtered[i], grid: false),
+                      );
+                      if (confirm == true) await b.deleteSelected();
+                    },
+                    icon: Icon(Icons.delete_outline_rounded, color: cs.error),
+                  ),
+                ] else ...[
+                  IconButton(
+                    tooltip: b.grid ? 'Liste' : 'Izgara',
+                    onPressed: b.toggleGrid,
+                    icon: Icon(
+                      b.grid
+                          ? Icons.view_list_rounded
+                          : Icons.grid_view_rounded,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Sirala / Filtre',
+                    onSelected: (v) {
+                      switch (v) {
+                        case 'name':
+                          b.setSort(SortBy.name);
+                        case 'size':
+                          b.setSort(SortBy.size);
+                        case 'date':
+                          b.setSort(SortBy.modified);
+                        case 'all':
+                          b.setFilter(null);
+                        case 'img':
+                          b.setFilter(FileKind.image);
+                        case 'vid':
+                          b.setFilter(FileKind.video);
+                        case 'doc':
+                          b.setFilter(FileKind.document);
+                        case 'aud':
+                          b.setFilter(FileKind.audio);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'name', child: Text('Ada gore')),
+                      PopupMenuItem(value: 'size', child: Text('Boyuta gore')),
+                      PopupMenuItem(value: 'date', child: Text('Tarihe gore')),
+                      PopupMenuDivider(),
+                      PopupMenuItem(value: 'all', child: Text('Tum turler')),
+                      PopupMenuItem(value: 'img', child: Text('Resimler')),
+                      PopupMenuItem(value: 'vid', child: Text('Videolar')),
+                      PopupMenuItem(value: 'doc', child: Text('Belgeler')),
+                      PopupMenuItem(value: 'aud', child: Text('Ses')),
+                    ],
+                  ),
+                  IconButton(
+                    tooltip: 'Yenile',
+                    onPressed: b.refresh,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ],
+              ],
+            ),
+            body: Column(
+              children: [
+                // Quick access
+                if (!b.selectMode && b.quick.isNotEmpty)
+                  SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: b.quick.entries.map((e) {
+                        final active = b.currentPath == e.value;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            selected: active,
+                            label: Text(e.key),
+                            onSelected: (_) => b.openPath(e.value),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                // Path + search
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        b.currentPath,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: cs.onSurfaceVariant,
+                          fontFamily: 'monospace',
+                        ),
                       ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Yukleme yakinda')),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _searchCtrl,
+                        onChanged: b.setQuery,
+                        decoration: InputDecoration(
+                          hintText: 'Bu klasorde ara...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: b.query.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear_rounded),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    b.setQuery('');
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor:
+                              cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _buildBody(b, cs)),
+              ],
+            ),
+            floatingActionButton: b.selectMode
+                ? null
+                : FloatingActionButton.extended(
+                    onPressed: _newFolder,
+                    icon: const Icon(Icons.create_new_folder_rounded),
+                    label: const Text('Klasor'),
+                  ),
           );
         },
-        icon: const Icon(Icons.upload_rounded),
-        label: const Text('Yukle'),
+      ),
+    );
+  }
+
+  Widget _buildBody(BrowserController b, ColorScheme cs) {
+    if (b.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (b.error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: cs.error),
+              const SizedBox(height: 12),
+              Text(b.error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: b.refresh, child: const Text('Tekrar dene')),
+            ],
+          ),
+        ),
+      );
+    }
+    if (b.items.isEmpty) {
+      return Center(
+        child: Text(
+          'Bos veya erisilemiyor',
+          style: TextStyle(color: cs.onSurfaceVariant),
+        ),
+      );
+    }
+
+    if (b.grid) {
+      return RefreshIndicator(
+        onRefresh: b.refresh,
+        child: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.82,
+          ),
+          itemCount: b.items.length,
+          itemBuilder: (_, i) {
+            final item = b.items[i];
+            final sel = b.selected.contains(item.id);
+            return FileTile(
+              item: item,
+              grid: true,
+              selected: sel,
+              selectMode: b.selectMode,
+              onTap: () {
+                if (b.selectMode) {
+                  b.toggleSelect(item);
+                } else {
+                  b.openItem(item);
+                }
+              },
+              onLongPress: () {
+                if (b.selectMode) {
+                  b.toggleSelect(item);
+                } else {
+                  _itemSheet(item);
+                }
+              },
+            );
+          },
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: b.refresh,
+      child: ListView.separated(
+        padding: const EdgeInsets.only(bottom: 88),
+        itemCount: b.items.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (_, i) {
+          final item = b.items[i];
+          final sel = b.selected.contains(item.id);
+          return FileTile(
+            item: item,
+            grid: false,
+            selected: sel,
+            selectMode: b.selectMode,
+            onTap: () {
+              if (b.selectMode) {
+                b.toggleSelect(item);
+              } else {
+                b.openItem(item);
+              }
+            },
+            onLongPress: () {
+              b.toggleSelect(item);
+            },
+          );
+        },
       ),
     );
   }
