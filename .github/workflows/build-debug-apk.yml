@@ -1,0 +1,76 @@
+name: Build Debug APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Flutter APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Recreate Android platform
+        run: |
+          rm -rf android
+          flutter create . --project-name dosyax --org com.lionapp1 --platforms=android
+
+      - name: Patch manifest icon signing
+        run: |
+          python3 tooling/patch_android_ui.py
+          python3 tooling/patch_android_signing.py
+          grep -E "applicationId|namespace|signingConfig" android/app/build.gradle.kts || true
+
+      - name: Fix widget_test
+        run: |
+          printf '%s\n' \
+            "import 'package:flutter_test/flutter_test.dart';" \
+            "import 'package:dosyax/main.dart';" \
+            "" \
+            "void main() {" \
+            "  testWidgets('smoke', (tester) async {" \
+            "    await tester.pumpWidget(const DosyaXApp());" \
+            "    await tester.pump();" \
+            "    expect(find.byType(MaterialApp), findsOneWidget);" \
+            "  });" \
+            "}" \
+            > test/widget_test.dart
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos || true
+
+      - name: Build signed arm64 release APK
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dosyax-apk-arm64
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          retention-days: 14
+          if-no-files-found: error
