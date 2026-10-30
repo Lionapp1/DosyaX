@@ -46,17 +46,19 @@ class SocialFoldersService {
       }
     }
 
-    // Native shortcuts (browse in place)
-    for (final e in await nativeSources().then((m) => m.entries)) {
-      if (Directory(e.value).existsSync()) {
-        paths['~${e.key}'] = e.value;
+    final native = await nativeSources();
+    for (final e in native.entries) {
+      for (final path in e.value) {
+        if (Directory(path).existsSync()) {
+          paths['~${e.key}'] = path;
+          break;
+        }
       }
     }
 
     return paths;
   }
 
-  /// Known locations where social apps store media on Android.
   Future<Map<String, List<String>>> nativeSources() async {
     final root = await StorageService.instance.primaryRoot;
     return {
@@ -77,20 +79,17 @@ class SocialFoldersService {
         p.join(root, 'Telegram', 'Telegram Video'),
         p.join(root, 'Telegram', 'Telegram Documents'),
         p.join(root, 'Telegram', 'Telegram Files'),
-        p.join(root, 'Android', 'data', 'org.telegram.messenger', 'files'),
         p.join(root, 'Android', 'media', 'org.telegram.messenger'),
       ],
       'Instagram': [
         p.join(root, 'Pictures', 'Instagram'),
         p.join(root, 'DCIM', 'Instagram'),
         p.join(root, 'Android', 'media', 'com.instagram.android'),
-        p.join(root, 'Android', 'data', 'com.instagram.android', 'files'),
       ],
       'Threads': [
         p.join(root, 'Pictures', 'Threads'),
         p.join(root, 'DCIM', 'Threads'),
         p.join(root, 'Android', 'media', 'com.instagram.barcelona'),
-        p.join(root, 'Android', 'data', 'com.instagram.barcelona', 'files'),
       ],
     };
   }
@@ -99,7 +98,9 @@ class SocialFoldersService {
     final all = await ensureCreated();
     return {
       for (final e in all.entries)
-        if (platforms.contains(e.key) || e.key == 'Sosyal' || e.key.startsWith('~'))
+        if (platforms.contains(e.key) ||
+            e.key == 'Sosyal' ||
+            e.key.startsWith('~'))
           e.key: e.value,
     };
   }
@@ -138,8 +139,6 @@ class SocialFoldersService {
     return destDir;
   }
 
-  /// Scan device for social media files and queue-copy into DosyaX/Sosyal.
-  /// Returns number of files enqueued. Skips files already present by name.
   Future<int> scanAndImport({int maxFiles = 120}) async {
     await ensureCreated();
     final sources = await nativeSources();
@@ -158,7 +157,6 @@ class SocialFoldersService {
           continue;
         }
 
-        // Prefer newer files first
         entities.sort((a, b) {
           try {
             return b.statSync().modified.compareTo(a.statSync().modified);
@@ -185,12 +183,7 @@ class SocialFoldersService {
           }
 
           final destDir = await suggestDestFor(e.path);
-          // Force platform from scan source
-          final forced = p.join(
-            await sosyalRoot,
-            platform,
-            p.basename(destDir),
-          );
+          final forced = p.join(await sosyalRoot, platform, p.basename(destDir));
           await Directory(forced).create(recursive: true);
           final destFile = p.join(forced, name);
           if (File(destFile).existsSync()) continue;
