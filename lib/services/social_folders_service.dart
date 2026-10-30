@@ -5,12 +5,17 @@ import 'package:path/path.dart' as p;
 import 'storage_service.dart';
 import 'transfer_service.dart';
 
-/// DosyaX/Sosyal/... + auto-discover WhatsApp / Telegram / IG / Threads media.
 class SocialFoldersService {
   SocialFoldersService._();
   static final SocialFoldersService instance = SocialFoldersService._();
 
-  static const platforms = ['Instagram', 'WhatsApp', 'Telegram', 'Threads'];
+  static const platforms = [
+    'Instagram',
+    'WhatsApp',
+    'Telegram',
+    'Threads',
+    'X',
+  ];
   static const subFolders = ['Fotograflar', 'Videolar', 'Belgeler', 'Hikayeler'];
 
   static const _imageExt = {
@@ -40,7 +45,9 @@ class SocialFoldersService {
       await Directory(plat).create(recursive: true);
       paths[platform] = plat;
       for (final sub in subFolders) {
-        if (platform == 'Threads' && sub == 'Belgeler') continue;
+        if ((platform == 'Threads' || platform == 'X') && sub == 'Belgeler') {
+          continue;
+        }
         final dir = Directory(p.join(plat, sub));
         if (!await dir.exists()) await dir.create(recursive: true);
       }
@@ -91,6 +98,13 @@ class SocialFoldersService {
         p.join(root, 'DCIM', 'Threads'),
         p.join(root, 'Android', 'media', 'com.instagram.barcelona'),
       ],
+      'X': [
+        p.join(root, 'Pictures', 'Twitter'),
+        p.join(root, 'Pictures', 'X'),
+        p.join(root, 'DCIM', 'Twitter'),
+        p.join(root, 'Android', 'media', 'com.twitter.android'),
+        p.join(root, 'Android', 'data', 'com.twitter.android', 'files'),
+      ],
     };
   }
 
@@ -120,6 +134,11 @@ class SocialFoldersService {
       platform = 'Telegram';
     } else if (full.contains('threads') || full.contains('barcelona')) {
       platform = 'Threads';
+    } else if (full.contains('twitter') ||
+        full.contains('com.twitter') ||
+        full.contains('/x/') ||
+        name.startsWith('tw_')) {
+      platform = 'X';
     } else if (full.contains('instagram') || full.contains('ig_')) {
       platform = 'Instagram';
     }
