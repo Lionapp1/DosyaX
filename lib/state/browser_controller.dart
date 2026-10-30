@@ -8,6 +8,7 @@ class BrowserController extends ChangeNotifier {
   final StorageService _storage = StorageService.instance;
 
   String _currentPath = '';
+  String _rootPath = '';
   List<FileItem> _items = [];
   List<FileItem> _visible = [];
   final Set<String> _selected = {};
@@ -22,6 +23,7 @@ class BrowserController extends ChangeNotifier {
   bool _selectMode = false;
 
   String get currentPath => _currentPath;
+  String get rootPath => _rootPath;
   List<FileItem> get items => _visible;
   Set<String> get selected => _selected;
   bool get loading => _loading;
@@ -35,18 +37,39 @@ class BrowserController extends ChangeNotifier {
   bool get selectMode => _selectMode;
   int get selectedCount => _selected.length;
 
+  bool get canGoUp {
+    if (_currentPath.isEmpty || _rootPath.isEmpty) return false;
+    if (_currentPath == _rootPath) return false;
+    final parent = p.dirname(_currentPath);
+    return parent.isNotEmpty && parent != _currentPath;
+  }
+
+  /// System back: cancel select → go up folder → false if at root.
+  Future<bool> handleSystemBack() async {
+    if (_selectMode) {
+      toggleSelectMode(false);
+      return true;
+    }
+    if (canGoUp) {
+      await goUp();
+      return true;
+    }
+    return false;
+  }
+
   Future<void> init() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      // Parallel: quick chips + start folder
       final results = await Future.wait([
         _storage.quickPaths(),
         _storage.startPath,
+        _storage.primaryRoot,
       ]);
       _quick = results[0] as Map<String, String>;
       _currentPath = results[1] as String;
+      _rootPath = results[2] as String;
       await refresh(force: true);
     } catch (e) {
       _error = 'Depolama acilamadi';
@@ -189,10 +212,16 @@ class BrowserController extends ChangeNotifier {
   }
 
   Future<void> goUp() async {
-    final root = await _storage.primaryRoot;
-    if (_currentPath == root) return;
+    if (!canGoUp) return;
     final parent = p.dirname(_currentPath);
     if (parent.isEmpty || parent == _currentPath) return;
+    // Don't go above root
+    if (_rootPath.isNotEmpty &&
+        parent.length < _rootPath.length &&
+        !_rootPath.startsWith(parent)) {
+      await openPath(_rootPath);
+      return;
+    }
     await openPath(parent);
   }
 }
