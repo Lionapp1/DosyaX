@@ -26,7 +26,6 @@ class HomeScreenState extends State<HomeScreen> {
   late final BrowserController _browser;
   final _searchCtrl = TextEditingController();
 
-  /// Called from ShellScreen system back.
   Future<bool> handleSystemBack() => _browser.handleSystemBack();
 
   @override
@@ -76,7 +75,6 @@ class HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    // Other types: try in-app share/open
     await StorageService.instance.open(item);
   }
 
@@ -99,6 +97,35 @@ class HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(ok ? 'Ad degisti' : 'Basarisiz')),
     );
+  }
+
+  Future<void> _delete(FileItem item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Silinsin mi?'),
+        content: Text('${item.name} kalici olarak silinecek.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Iptal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final ok = await StorageService.instance.delete(item);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Silindi' : 'Silinemedi — izin veya sistem engeli'),
+      ),
+    );
+    if (ok) await _browser.refresh(force: true);
   }
 
   Future<String?> _askText(String title, String hint, {String? initial}) {
@@ -149,7 +176,9 @@ class HomeScreenState extends State<HomeScreen> {
                       : Icons.copy_rounded,
                 ),
                 title: Text(
-                  op == TransferOp.move ? 'Nereye tasinsin?' : 'Nereye kopyalansin?',
+                  op == TransferOp.move
+                      ? 'Nereye tasinsin?'
+                      : 'Nereye kopyalansin?',
                 ),
                 subtitle: const Text('Arka planda devam eder'),
               ),
@@ -307,10 +336,9 @@ class HomeScreenState extends State<HomeScreen> {
               ListTile(
                 leading: Icon(Icons.delete_outline_rounded, color: cs.error),
                 title: Text('Sil', style: TextStyle(color: cs.error)),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(ctx);
-                  final ok = await StorageService.instance.delete(item);
-                  if (ok) _browser.refresh(force: true);
+                  _delete(item);
                 },
               ),
               const SizedBox(height: 8),
@@ -336,9 +364,7 @@ class HomeScreenState extends State<HomeScreen> {
             )
           : IconButton(
               icon: Icon(
-                b.canGoUp
-                    ? Icons.arrow_back_rounded
-                    : Icons.folder_rounded,
+                b.canGoUp ? Icons.arrow_back_rounded : Icons.folder_rounded,
               ),
               tooltip: b.canGoUp ? 'Geri' : 'Kok',
               onPressed: b.canGoUp ? b.goUp : null,
@@ -383,7 +409,14 @@ class HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               );
-              if (confirm == true) await b.deleteSelected();
+              if (confirm == true) {
+                await b.deleteSelected();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Secilenler silindi')),
+                  );
+                }
+              }
             },
             icon: Icon(Icons.delete_outline_rounded, color: cs.error),
           ),
@@ -622,10 +655,7 @@ class HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.folder_off_outlined, size: 48, color: cs.outline),
             const SizedBox(height: 12),
-            Text(
-              'Bos klasor',
-              style: TextStyle(color: cs.onSurfaceVariant),
-            ),
+            Text('Bos klasor', style: TextStyle(color: cs.onSurfaceVariant)),
           ],
         ),
       );
