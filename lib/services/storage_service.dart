@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -20,9 +21,7 @@ List<FileItem> listDirSync(String dirPath) {
       try {
         final item = FileItem.fromPathSync(e.path);
         if (item != null) items.add(item);
-      } catch (_) {
-        // skip unreadable entry, keep listing
-      }
+      } catch (_) {}
       if (items.length >= 3000) break;
     }
   } catch (_) {
@@ -110,10 +109,15 @@ class StorageService {
         'Videolar': p.join(root, 'Movies'),
         'Muzik': p.join(root, 'Music'),
         'Belgeler': p.join(root, 'Documents'),
+        'Android': p.join(root, 'Android'),
+        'Data': p.join(root, 'Android', 'data'),
+        'OBB': p.join(root, 'Android', 'obb'),
       };
       final out = <String, String>{};
       for (final e in map.entries) {
-        if (Directory(e.value).existsSync()) out[e.key] = e.value;
+        try {
+          if (Directory(e.value).existsSync()) out[e.key] = e.value;
+        } catch (_) {}
       }
       if (!out.containsKey('Depolama')) out['Depolama'] = root;
       return out;
@@ -122,7 +126,6 @@ class StorageService {
     }
   }
 
-  /// True only with all-files access (Android 11+ MANAGE_EXTERNAL_STORAGE).
   Future<bool> hasFullAccess() async {
     if (!Platform.isAndroid) return true;
     try {
@@ -147,7 +150,6 @@ class StorageService {
         _accessCache = true;
         return true;
       }
-      // Android 13+ partial media still allows browsing some dirs
       final photos = await Permission.photos.isGranted;
       final videos = await Permission.videos.isGranted;
       final audio = await Permission.audio.isGranted;
@@ -160,11 +162,9 @@ class StorageService {
     return false;
   }
 
-  /// Request everything; for full access opens system "All files" page.
   Future<bool> requestStorageAccess() async {
     if (!Platform.isAndroid) return true;
     try {
-      // 1) Prefer all-files access
       var manage = await Permission.manageExternalStorage.status;
       if (!manage.isGranted) {
         manage = await Permission.manageExternalStorage.request();
@@ -173,9 +173,7 @@ class StorageService {
         _accessCache = true;
         return true;
       }
-      // Permanently denied / needs settings
       if (manage.isPermanentlyDenied || manage.isDenied) {
-        // Still request media + storage for partial access
         await [
           Permission.storage,
           Permission.photos,
@@ -203,7 +201,6 @@ class StorageService {
 
   Future<bool> openFullAccessSettings() async {
     try {
-      // Opens app settings; on many devices user can enable "Files and media / All files"
       return await openAppSettings();
     } catch (_) {
       return false;
@@ -289,15 +286,40 @@ class StorageService {
 
   Future<bool> delete(FileItem item) async {
     try {
-      if (item.isFolder) {
+      final type = FileSystemEntity.typeSync(item.path, followLinks: false);
+      if (type == FileSystemEntityType.notFound) {
+        invalidateCache(p.dirname(item.path));
+        return true;
+      }
+      if (type == FileSystemEntityType.directory || item.isFolder) {
         await Directory(item.path).delete(recursive: true);
       } else {
         await File(item.path).delete();
       }
       invalidateCache(p.dirname(item.path));
+      // Feedback
+      try {
+        await HapticFeedback.mediumImpact();
+        SystemSound.play(SystemSoundType.click);
+      } catch (_) {}
       return true;
     } catch (_) {
-      return false;
+      // Retry with sync API (some OEM paths)
+      try {
+        if (item.isFolder) {
+          Directory(item.path).deleteSync(recursive: true);
+        } else {
+          File(item.path).deleteSync();
+        }
+        invalidateCache(p.dirname(item.path));
+        try {
+          await HapticFeedback.mediumImpact();
+          SystemSound.play(SystemSoundType.click);
+        } catch (_) {}
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
   }
 
@@ -305,12 +327,18 @@ class StorageService {
     try {
       final parent = p.dirname(item.path);
       final dest = p.join(parent, newName);
+      if (FileSystemEntity.typeSync(dest) != FileSystemEntityType.notFound) {
+        return false;
+      }
       if (item.isFolder) {
         await Directory(item.path).rename(dest);
       } else {
         await File(item.path).rename(dest);
       }
       invalidateCache(parent);
+      try {
+        await HapticFeedback.selectionClick();
+      } catch (_) {}
       return true;
     } catch (_) {
       return false;
@@ -321,8 +349,11 @@ class StorageService {
     try {
       final dir = Directory(p.join(parentPath, name));
       if (await dir.exists()) return false;
-      await dir.create();
+      await dir.create(recursive: true);
       invalidateCache(parentPath);
+      try {
+        await HapticFeedback.lightImpact();
+      } catch (_) {}
       return true;
     } catch (_) {
       return false;
