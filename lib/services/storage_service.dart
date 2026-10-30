@@ -9,25 +9,21 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/file_item.dart';
 
-/// Heavy listing off the UI isolate for large folders.
-Future<List<FileItem>> _listDirIsolate(String dirPath) async {
+/// Fully synchronous listing for compute() — no microtask storms.
+List<FileItem> listDirSync(String dirPath) {
   final dir = Directory(dirPath);
-  if (!await dir.exists()) return [];
-
-  final entities = <FileSystemEntity>[];
-  try {
-    await for (final e in dir.list(followLinks: false)) {
-      entities.add(e);
-      if (entities.length > 5000) break; // safety cap
-    }
-  } catch (_) {
-    return [];
-  }
+  if (!dir.existsSync()) return const [];
 
   final items = <FileItem>[];
-  for (final e in entities) {
-    final item = await FileItem.fromEntity(e);
-    if (item != null) items.add(item);
+  try {
+    final entities = dir.listSync(followLinks: false);
+    for (final e in entities) {
+      final item = FileItem.fromPathSync(e.path);
+      if (item != null) items.add(item);
+      if (items.length >= 2500) break;
+    }
+  } catch (_) {
+    return const [];
   }
   return items;
 }
@@ -37,18 +33,17 @@ class StorageService {
   static final StorageService instance = StorageService._();
 
   String? _primaryRoot;
+  String? _startPath;
+  bool? _accessCache;
+  final Map<String, List<FileItem>> _listCache = {};
+  static const int _cacheMax = 24;
 
   Future<String> get primaryRoot async {
     if (_primaryRoot != null) return _primaryRoot!;
 
-    // Prefer shared external storage on Android.
     if (Platform.isAndroid) {
-      final candidates = [
-        '/storage/emulated/0',
-        '/sdcard',
-      ];
-      for (final c in candidates) {
-        if (await Directory(c).exists()) {
+      for (final c in ['/storage/emulated/0', '/sdcard']) {
+        if (Directory(c).existsSync()) {
           _primaryRoot = c;
           return c;
         }
@@ -57,13 +52,12 @@ class StorageService {
 
     final ext = await getExternalStorageDirectory();
     if (ext != null) {
-      // Often .../Android/data/... — climb to emulated root if possible
       var path = ext.path;
       final marker = '/Android/data/';
       final idx = path.indexOf(marker);
       if (idx > 0) {
         path = path.substring(0, idx);
-        if (await Directory(path).exists()) {
+        if (Directory(path).existsSync()) {
           _primaryRoot = path;
           return path;
         }
@@ -77,6 +71,19 @@ class StorageService {
     return docs.path;
   }
 
+  /// Prefer Download over huge root — faster first open.
+  Future<String> get startPath async {
+    if (_startPath != null) return _startPath!;
+    final root = await primaryRoot;
+    final download = p.join(root, 'Download');
+    if (Directory(download).existsSync()) {
+      _startPath = download;
+      return download;
+    }
+    _startPath = root;
+    return root;
+  }
+
   Future<Map<String, String>> quickPaths() async {
     final root = await primaryRoot;
     final map = <String, String>{
@@ -88,51 +95,60 @@ class StorageService {
       'Muzik': p.join(root, 'Music'),
       'Belgeler': p.join(root, 'Documents'),
     };
-    // Keep only existing dirs
     final out = <String, String>{};
     for (final e in map.entries) {
-      if (await Directory(e.value).exists()) {
-        out[e.key] = e.value;
-      }
+      if (Directory(e.value).existsSync()) out[e.key] = e.value;
     }
     if (!out.containsKey('Depolama')) out['Depolama'] = root;
     return out;
   }
 
   Future<bool> hasStorageAccess() async {
-    if (!Platform.isAndroid) return true;
-
-    final manage = await Permission.manageExternalStorage.status;
-    if (manage.isGranted) return true;
-
-    final storage = await Permission.storage.status;
-    if (storage.isGranted) return true;
-
-    // Android 13+ media
-    final photos = await Permission.photos.status;
-    final videos = await Permission.videos.status;
-    final audio = await Permission.audio.status;
-    if (photos.isGranted || videos.isGranted || audio.isGranted) return true;
-
+    if (_accessCache != null) return _accessCache!;
+    if (!Platform.isAndroid) {
+      _accessCache = true;
+      return true;
+    }
+    // Single fast checks; avoid requesting all at once on every launch
+    if (await Permission.manageExternalStorage.isGranted) {
+      _accessCache = true;
+      return true;
+    }
+    if (await Permission.storage.isGranted) {
+      _accessCache = true;
+      return true;
+    }
+    if (await Permission.photos.isGranted) {
+      _accessCache = true;
+      return true;
+    }
+    _accessCache = false;
     return false;
   }
 
   Future<bool> requestStorageAccess() async {
     if (!Platform.isAndroid) return true;
-
-    // Full access preferred for a real file manager
-    var manage = await Permission.manageExternalStorage.request();
-    if (manage.isGranted) return true;
-
-    // Fallback scoped / legacy
+    if (await Permission.manageExternalStorage.request().isGranted) {
+      _accessCache = true;
+      return true;
+    }
     final results = await [
       Permission.storage,
       Permission.photos,
       Permission.videos,
       Permission.audio,
     ].request();
+    final ok = results.values.any((s) => s.isGranted);
+    _accessCache = ok;
+    return ok;
+  }
 
-    return results.values.any((s) => s.isGranted);
+  void invalidateCache([String? path]) {
+    if (path == null) {
+      _listCache.clear();
+    } else {
+      _listCache.remove(path);
+    }
   }
 
   Future<List<FileItem>> listDirectory(
@@ -141,13 +157,21 @@ class StorageService {
     bool ascending = true,
     String query = '',
     FileKind? filterKind,
+    bool forceRefresh = false,
   }) async {
     List<FileItem> items;
-    try {
-      // compute needs top-level or static — use isolate entry
-      items = await compute(_listDirIsolate, dirPath);
-    } catch (_) {
-      items = await _listDirIsolate(dirPath);
+    if (!forceRefresh && _listCache.containsKey(dirPath)) {
+      items = List<FileItem>.of(_listCache[dirPath]!);
+    } else {
+      try {
+        items = await compute(listDirSync, dirPath);
+      } catch (_) {
+        items = listDirSync(dirPath);
+      }
+      _listCache[dirPath] = List<FileItem>.of(items);
+      if (_listCache.length > _cacheMax) {
+        _listCache.remove(_listCache.keys.first);
+      }
     }
 
     if (query.isNotEmpty) {
@@ -155,11 +179,12 @@ class StorageService {
       items = items.where((i) => i.name.toLowerCase().contains(q)).toList();
     }
     if (filterKind != null) {
-      items = items.where((i) => i.kind == filterKind || i.isFolder).toList();
+      items = items
+          .where((i) => i.kind == filterKind || i.isFolder)
+          .toList();
     }
 
     int cmp(FileItem a, FileItem b) {
-      // Folders first
       if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
       int r;
       switch (sortBy) {
@@ -199,6 +224,7 @@ class StorageService {
       } else {
         await File(item.path).delete();
       }
+      invalidateCache(p.dirname(item.path));
       return true;
     } catch (_) {
       return false;
@@ -214,6 +240,7 @@ class StorageService {
       } else {
         await File(item.path).rename(dest);
       }
+      invalidateCache(parent);
       return true;
     } catch (_) {
       return false;
@@ -225,25 +252,10 @@ class StorageService {
       final dir = Directory(p.join(parentPath, name));
       if (await dir.exists()) return false;
       await dir.create();
+      invalidateCache(parentPath);
       return true;
     } catch (_) {
       return false;
     }
-  }
-
-  Future<Map<String, int>> folderStats(String dirPath) async {
-    final items = await listDirectory(dirPath);
-    var files = 0;
-    var folders = 0;
-    var bytes = 0;
-    for (final i in items) {
-      if (i.isFolder) {
-        folders++;
-      } else {
-        files++;
-        bytes += i.size;
-      }
-    }
-    return {'files': files, 'folders': folders, 'bytes': bytes};
   }
 }
