@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/file_item.dart';
+import '../services/app_settings.dart';
+import '../services/private_vault.dart';
 import '../services/storage_service.dart';
 import '../state/browser_controller.dart';
 import '../widgets/file_tile.dart';
+import 'image_viewer_screen.dart';
+import 'video_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,6 +27,15 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _browser = BrowserController();
     _browser.init();
+    // Apply preferred grid after settings load may race — safe default
+    if (!AppSettings.instance.preferGrid) {
+      // controller starts grid true; flip if needed after init
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!AppSettings.instance.preferGrid && _browser.grid) {
+          _browser.toggleGrid();
+        }
+      });
+    }
   }
 
   @override
@@ -30,6 +43,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchCtrl.dispose();
     _browser.dispose();
     super.dispose();
+  }
+
+  Future<void> _openMedia(FileItem item) async {
+    if (item.isFolder) {
+      await _browser.openItem(item);
+      return;
+    }
+    if (item.kind == FileKind.image) {
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(path: item.path, title: item.name),
+        ),
+      );
+      return;
+    }
+    if (item.kind == FileKind.video) {
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(path: item.path, title: item.name),
+        ),
+      );
+      return;
+    }
+    await StorageService.instance.open(item);
   }
 
   Future<void> _newFolder() async {
@@ -43,7 +82,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _rename(FileItem item) async {
-    final name = await _askText('Yeniden adlandir', item.name, initial: item.name);
+    final name =
+        await _askText('Yeniden adlandir', item.name, initial: item.name);
     if (name == null || name.trim().isEmpty || name == item.name) return;
     final ok = await _browser.renameItem(item, name.trim());
     if (!mounted) return;
@@ -65,7 +105,10 @@ class _HomeScreenState extends State<HomeScreen> {
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Iptal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Iptal'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text),
             child: const Text('Tamam'),
@@ -80,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      backgroundColor: cs.surface,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -96,7 +140,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: const Text('Ac'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  StorageService.instance.open(item);
+                  _openMedia(item);
+                },
+              ),
+            if (!item.isFolder)
+              ListTile(
+                leading: const Icon(Icons.lock_rounded),
+                title: const Text('Ozel alana kopyala'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final ok = await PrivateVault.instance.importFile(item.path);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        ok ? 'Ozel alana kopyalandi' : 'Kopyalanamadi',
+                      ),
+                    ),
+                  );
                 },
               ),
             if (!item.isFolder)
@@ -133,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () async {
                 Navigator.pop(ctx);
                 final ok = await StorageService.instance.delete(item);
-                if (ok) _browser.refresh();
+                if (ok) _browser.refresh(force: true);
               },
             ),
             const SizedBox(height: 8),
@@ -143,123 +204,135 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  PreferredSizeWidget _appBar(BrowserController b, ColorScheme cs) {
+    return AppBar(
+      backgroundColor: cs.surface,
+      foregroundColor: cs.onSurface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      shadowColor: Colors.transparent,
+      leading: b.selectMode
+          ? IconButton(
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => b.toggleSelectMode(false),
+            )
+          : IconButton(
+              icon: const Icon(Icons.arrow_upward_rounded),
+              tooltip: 'Ust klasor',
+              onPressed: b.goUp,
+            ),
+      title: Text(
+        b.selectMode ? '${b.selectedCount} secili' : 'DosyaX',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      actions: [
+        if (b.selectMode) ...[
+          IconButton(
+            tooltip: 'Tumu',
+            onPressed: b.selectAll,
+            icon: const Icon(Icons.select_all_rounded),
+          ),
+          IconButton(
+            tooltip: 'Paylas',
+            onPressed: () => b.shareSelected(),
+            icon: const Icon(Icons.share_rounded),
+          ),
+          IconButton(
+            tooltip: 'Sil',
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Silinsin mi?'),
+                  content: Text('${b.selectedCount} oge silinecek.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Iptal'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Sil'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) await b.deleteSelected();
+            },
+            icon: Icon(Icons.delete_outline_rounded, color: cs.error),
+          ),
+        ] else ...[
+          IconButton(
+            tooltip: b.grid ? 'Liste' : 'Izgara',
+            onPressed: b.toggleGrid,
+            icon: Icon(
+              b.grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Sirala / Filtre',
+            onSelected: (v) {
+              switch (v) {
+                case 'name':
+                  b.setSort(SortBy.name);
+                case 'size':
+                  b.setSort(SortBy.size);
+                case 'date':
+                  b.setSort(SortBy.modified);
+                case 'all':
+                  b.setFilter(null);
+                case 'img':
+                  b.setFilter(FileKind.image);
+                case 'vid':
+                  b.setFilter(FileKind.video);
+                case 'doc':
+                  b.setFilter(FileKind.document);
+                case 'aud':
+                  b.setFilter(FileKind.audio);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'name', child: Text('Ada gore')),
+              PopupMenuItem(value: 'size', child: Text('Boyuta gore')),
+              PopupMenuItem(value: 'date', child: Text('Tarihe gore')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'all', child: Text('Tum turler')),
+              PopupMenuItem(value: 'img', child: Text('Resimler')),
+              PopupMenuItem(value: 'vid', child: Text('Videolar')),
+              PopupMenuItem(value: 'doc', child: Text('Belgeler')),
+              PopupMenuItem(value: 'aud', child: Text('Ses')),
+            ],
+          ),
+          IconButton(
+            tooltip: 'Yenile',
+            onPressed: () => b.refresh(force: true),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return ChangeNotifierProvider.value(
       value: _browser,
       child: Consumer<BrowserController>(
         builder: (context, b, _) {
-          final cs = Theme.of(context).colorScheme;
           return Scaffold(
-            appBar: AppBar(
-              leading: b.selectMode
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => b.toggleSelectMode(false),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.arrow_upward_rounded),
-                      tooltip: 'Ust klasor',
-                      onPressed: b.goUp,
-                    ),
-              title: Text(
-                b.selectMode ? '${b.selectedCount} secili' : 'DosyaX',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              actions: [
-                if (b.selectMode) ...[
-                  IconButton(
-                    tooltip: 'Tumu',
-                    onPressed: b.selectAll,
-                    icon: const Icon(Icons.select_all_rounded),
-                  ),
-                  IconButton(
-                    tooltip: 'Paylas',
-                    onPressed: () => b.shareSelected(),
-                    icon: const Icon(Icons.share_rounded),
-                  ),
-                  IconButton(
-                    tooltip: 'Sil',
-                    onPressed: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Silinsin mi?'),
-                          content: Text('${b.selectedCount} oge silinecek.'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Iptal'),
-                            ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Sil'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirm == true) await b.deleteSelected();
-                    },
-                    icon: Icon(Icons.delete_outline_rounded, color: cs.error),
-                  ),
-                ] else ...[
-                  IconButton(
-                    tooltip: b.grid ? 'Liste' : 'Izgara',
-                    onPressed: b.toggleGrid,
-                    icon: Icon(
-                      b.grid
-                          ? Icons.view_list_rounded
-                          : Icons.grid_view_rounded,
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Sirala / Filtre',
-                    onSelected: (v) {
-                      switch (v) {
-                        case 'name':
-                          b.setSort(SortBy.name);
-                        case 'size':
-                          b.setSort(SortBy.size);
-                        case 'date':
-                          b.setSort(SortBy.modified);
-                        case 'all':
-                          b.setFilter(null);
-                        case 'img':
-                          b.setFilter(FileKind.image);
-                        case 'vid':
-                          b.setFilter(FileKind.video);
-                        case 'doc':
-                          b.setFilter(FileKind.document);
-                        case 'aud':
-                          b.setFilter(FileKind.audio);
-                      }
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'name', child: Text('Ada gore')),
-                      PopupMenuItem(value: 'size', child: Text('Boyuta gore')),
-                      PopupMenuItem(value: 'date', child: Text('Tarihe gore')),
-                      PopupMenuDivider(),
-                      PopupMenuItem(value: 'all', child: Text('Tum turler')),
-                      PopupMenuItem(value: 'img', child: Text('Resimler')),
-                      PopupMenuItem(value: 'vid', child: Text('Videolar')),
-                      PopupMenuItem(value: 'doc', child: Text('Belgeler')),
-                      PopupMenuItem(value: 'aud', child: Text('Ses')),
-                    ],
-                  ),
-                  IconButton(
-                    tooltip: 'Yenile',
-                    onPressed: b.refresh,
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
-                ],
-              ],
-            ),
+            backgroundColor: cs.surface,
+            // Prevents top bar jump when keyboard / insets change
+            resizeToAvoidBottomInset: false,
+            appBar: _appBar(b, cs),
             body: Column(
               children: [
-                // Quick access
                 if (!b.selectMode && b.quick.isNotEmpty)
-                  SizedBox(
-                    height: 44,
+                  Container(
+                    color: cs.surface,
+                    height: 48,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -277,9 +350,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       }).toList(),
                     ),
                   ),
-                // Path + search
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                Container(
+                  color: cs.surface,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -290,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 11,
                           color: cs.onSurfaceVariant,
-                          fontFamily: 'monospace',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -356,7 +428,10 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Text(b.error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: b.refresh, child: const Text('Tekrar dene')),
+              FilledButton(
+                onPressed: () => b.refresh(force: true),
+                child: const Text('Tekrar dene'),
+              ),
             ],
           ),
         ),
@@ -373,7 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (b.grid) {
       return RefreshIndicator(
-        onRefresh: b.refresh,
+        onRefresh: () => b.refresh(force: true),
         child: GridView.builder(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -395,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (b.selectMode) {
                   b.toggleSelect(item);
                 } else {
-                  b.openItem(item);
+                  _openMedia(item);
                 }
               },
               onLongPress: () {
@@ -412,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: b.refresh,
+      onRefresh: () => b.refresh(force: true),
       child: ListView.separated(
         padding: const EdgeInsets.only(bottom: 88),
         itemCount: b.items.length,
@@ -429,12 +504,10 @@ class _HomeScreenState extends State<HomeScreen> {
               if (b.selectMode) {
                 b.toggleSelect(item);
               } else {
-                b.openItem(item);
+                _openMedia(item);
               }
             },
-            onLongPress: () {
-              b.toggleSelect(item);
-            },
+            onLongPress: () => b.toggleSelect(item),
           );
         },
       ),
