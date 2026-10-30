@@ -3,16 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/home_screen.dart';
 import 'screens/permission_screen.dart';
+import 'screens/shell_screen.dart';
+import 'services/app_settings.dart';
 import 'services/storage_service.dart';
 
 void main() {
-  runZonedGuarded(() {
+  runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Avoid edge-to-edge jump: use stable system UI
     try {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
     } catch (_) {}
+    await AppSettings.instance.load();
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
     };
@@ -27,42 +33,72 @@ class DosyaXApp extends StatelessWidget {
 
   static const _seed = Color(0xFF1D4ED8);
 
+  ThemeData _theme(Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: _seed,
+      brightness: brightness,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.surface,
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shadowColor: Colors.transparent,
+        systemOverlayStyle: brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light.copyWith(
+                statusBarColor: Colors.transparent,
+                systemNavigationBarColor: scheme.surface,
+                systemNavigationBarIconBrightness: Brightness.light,
+              )
+            : SystemUiOverlayStyle.dark.copyWith(
+                statusBarColor: Colors.transparent,
+                systemNavigationBarColor: scheme.surface,
+                systemNavigationBarIconBrightness: Brightness.dark,
+              ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        indicatorColor: scheme.primaryContainer,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DosyaX',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _seed,
-          brightness: Brightness.light,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _seed,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const _Root(),
-      builder: (context, child) {
-        ErrorWidget.builder = (details) {
-          return Material(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Bir hata olustu\n${details.exceptionAsString()}',
-                  textAlign: TextAlign.center,
+    return AnimatedBuilder(
+      animation: AppSettings.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'DosyaX',
+          debugShowCheckedModeBanner: false,
+          themeMode: AppSettings.instance.themeMode,
+          theme: _theme(Brightness.light),
+          darkTheme: _theme(Brightness.dark),
+          home: const _Root(),
+          builder: (context, child) {
+            ErrorWidget.builder = (details) {
+              return Material(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Bir hata olustu\n${details.exceptionAsString()}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        };
-        return child ?? const SizedBox.shrink();
+              );
+            };
+            return child ?? const SizedBox.shrink();
+          },
+        );
       },
     );
   }
@@ -105,6 +141,7 @@ class _RootState extends State<_Root> {
 
     if (_bootError != null) {
       return Scaffold(
+        backgroundColor: cs.surface,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -169,6 +206,6 @@ class _RootState extends State<_Root> {
       );
     }
 
-    return const HomeScreen();
+    return const ShellScreen();
   }
 }
