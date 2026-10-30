@@ -1,79 +1,59 @@
 # DosyaX
 
-**Android dosya yöneticisi** — Flutter + Material 3.
+**Telefonun gercek dosyalari** icin modern Android dosya yoneticisi (Flutter).
 
-Telefon için debug APK, GitHub Actions ile otomatik üretilir.
+Hizli tarama, coklu secim, hizli erisim cipileri, tip filtreleri — Material 3.
 
 ![Flutter](https://img.shields.io/badge/Flutter-stable-02569B?logo=flutter)
 ![CI](https://img.shields.io/badge/CI-debug%20APK-success)
 
 ---
 
-## Debug APK (GitHub Actions)
+## Debug APK
 
-1. `main` branch’e push veya **Actions → Build Debug APK → Run workflow**
-2. Workflow bitince **Artifacts** → `dosyax-debug-apk`
-3. `app-debug.apk` indir, telefona yükle (bilinmeyen kaynaklar açık olsun)
-
-Workflow dosyası: [`.github/workflows/build-debug-apk.yml`](.github/workflows/build-debug-apk.yml)
+1. [Actions](https://github.com/Lionapp1/DosyaX/actions) → **Build Debug APK**
+2. Artifacts → `dosyax-debug-apk` → `app-debug.apk`
+3. Telefona kur
+4. Ilk acilista **Depolama / Dosyalari yonet** iznini ver (Android 11+)
 
 ```bash
-# Yerel build
 flutter pub get
+flutter run
+# veya
 flutter build apk --debug
-# Çıktı: build/app/outputs/flutter-apk/app-debug.apk
 ```
 
 ---
 
-## Özellikler (v0.1)
+## Ozellikler (v0.2)
 
-- Material 3 açık / koyu tema
-- Grid + liste görünümü
-- Dosya tipi ikonları (klasör, resim, video, PDF, arşiv, kod…)
-- Arama kutusu
-- Yükle FAB (yakında gerçek storage)
-
----
-
-## Stack
-
-| Katman | Teknoloji |
-|--------|-----------|
-| UI | Flutter / Material 3 |
-| Dil | Dart |
-| CI | GitHub Actions → debug APK artifact |
-| Platform | Android (`com.dosyax.app`) |
+- Gercek depolama: `/storage/emulated/0` ve alt klasorler
+- Hizli erisim: Indirilenler, DCIM, Pictures, Movies, Music, Documents
+- Izgara / liste, asagi cekerek yenile
+- Anlik arama (klasor ici)
+- Siralama: ad, boyut, tarih
+- Filtre: resim, video, belge, ses
+- Uzun bas: detay sayfasi — ac, paylas, yeniden adlandir, yol kopyala, sil
+- Coklu secim: sil / paylas / tumunu sec
+- Yeni klasor olustur
+- Isolate ile klasor listeleme (UI donmaz)
+- Izin ekrani (MANAGE_EXTERNAL_STORAGE + medya)
 
 ---
 
-## Proje yapısı
+## Yapi
 
 ```
 lib/
   main.dart
   models/file_item.dart
+  services/storage_service.dart
+  state/browser_controller.dart
   screens/home_screen.dart
+  screens/permission_screen.dart
   widgets/file_tile.dart
-android/          # native Android
-.github/workflows/build-debug-apk.yml
 ```
-
-> Eski `src/` (Next.js denemesi) duruyor; asıl uygulama **Flutter**. İstersen sonra temizleriz.
 
 ---
 
-## Yerel geliştirme
-
-```bash
-git clone https://github.com/Lionapp1/DosyaX.git
-cd DosyaX
-flutter pub get
-flutter run
-```
-
-Gereksinim: Flutter SDK (stable), Android SDK, cihaz veya emülatör.
-
----
-
-**DosyaX** — dosyalarını telefonda yönet.
+**DosyaX** — gercek dosyalar, hizli yonetim.
