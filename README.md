@@ -1,116 +1,79 @@
 # DosyaX
 
-**Modern, hızlı ve güvenli dosya yönetim & paylaşım platformu.**
+**Android dosya yöneticisi** — Flutter + Material 3.
 
-Kullanıcıların gerçekten seveceği seviyede bir deneyim: temiz arayüz, gerçek ikonlar, akıcı animasyonlar, VIP sistemi, admin paneli, dosya önizleme, arama ve daha fazlası.
+Telefon için debug APK, GitHub Actions ile otomatik üretilir.
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Stack](https://img.shields.io/badge/stack-Next.js%2015%20%7C%20TypeScript%20%7C%20Tailwind-black)
+![Flutter](https://img.shields.io/badge/Flutter-stable-02569B?logo=flutter)
+![CI](https://img.shields.io/badge/CI-debug%20APK-success)
 
 ---
 
-## Özellikler
+## Debug APK (GitHub Actions)
 
-### Kullanıcı
-- Sürükle-bırak + çoklu dosya yükleme (progress + ETA)
-- Klasör oluşturma, taşıma, kopyalama, silme, yeniden adlandırma
-- Liste / Grid / Galeri görünümleri
-- Anlık dosya önizleme (resim, video, PDF, TXT, kod)
-- Gelişmiş arama + filtreler (tip, boyut, tarih, etiket)
-- Paylaşım linkleri (süre sınırlı, şifreli, indirme limiti)
-- Beğeni / şikayet sistemi
-- VIP: sınırsız yükleme + tüm public dosyaları görme + öncelikli destek
-- Dark / Light / System tema
+1. `main` branch’e push veya **Actions → Build Debug APK → Run workflow**
+2. Workflow bitince **Artifacts** → `dosyax-debug-apk`
+3. `app-debug.apk` indir, telefona yükle (bilinmeyen kaynaklar açık olsun)
 
-### Admin
-- Kullanıcı yönetimi (ban, VIP verme, limit ayarı)
-- Dosya moderasyonu
-- İstatistikler (yükleme, depolama, aktif kullanıcı)
-- Sistem ayarları
+Workflow dosyası: [`.github/workflows/build-debug-apk.yml`](.github/workflows/build-debug-apk.yml)
 
-### Teknik
-- Modüler mimari (files, auth, sharing, admin, ui)
-- Gerçek Lucide ikonları
-- Responsive + erişilebilir (a11y)
-- Type-safe API
-- Hazır UI Kit (Button, Card, Dialog, Dropdown, Toast, Progress…)
+```bash
+# Yerel build
+flutter pub get
+flutter build apk --debug
+# Çıktı: build/app/outputs/flutter-apk/app-debug.apk
+```
+
+---
+
+## Özellikler (v0.1)
+
+- Material 3 açık / koyu tema
+- Grid + liste görünümü
+- Dosya tipi ikonları (klasör, resim, video, PDF, arşiv, kod…)
+- Arama kutusu
+- Yükle FAB (yakında gerçek storage)
 
 ---
 
 ## Stack
 
-| Katman        | Teknoloji                          |
-|---------------|------------------------------------|
-| Framework     | Next.js 15 (App Router)            |
-| Dil           | TypeScript                         |
-| Stil          | Tailwind CSS + CSS Variables       |
-| İkonlar       | Lucide React                       |
-| UI Kit        | Custom (shadcn tarzı)              |
-| State         | Zustand + React Query (planlanan)  |
-| Auth          | NextAuth / custom JWT (planlanan)  |
-| Storage       | Local / S3 uyumlu (planlanan)      |
+| Katman | Teknoloji |
+|--------|-----------|
+| UI | Flutter / Material 3 |
+| Dil | Dart |
+| CI | GitHub Actions → debug APK artifact |
+| Platform | Android (`com.dosyax.app`) |
 
 ---
 
-## Hızlı Başlangıç
+## Proje yapısı
+
+```
+lib/
+  main.dart
+  models/file_item.dart
+  screens/home_screen.dart
+  widgets/file_tile.dart
+android/          # native Android
+.github/workflows/build-debug-apk.yml
+```
+
+> Eski `src/` (Next.js denemesi) duruyor; asıl uygulama **Flutter**. İstersen sonra temizleriz.
+
+---
+
+## Yerel geliştirme
 
 ```bash
 git clone https://github.com/Lionapp1/DosyaX.git
 cd DosyaX
-npm install
-npm run dev
+flutter pub get
+flutter run
 ```
 
-Tarayıcıda: [http://localhost:3000](http://localhost:3000)
+Gereksinim: Flutter SDK (stable), Android SDK, cihaz veya emülatör.
 
 ---
 
-## Proje Yapısı
-
-```
-src/
-├── app/                    # Next.js App Router sayfaları
-│   ├── (auth)/             # login / register
-│   ├── (dashboard)/        # ana dosya yöneticisi
-│   ├── admin/              # admin paneli
-│   └── api/                # route handlers
-├── components/
-│   ├── ui/                 # UI Kit (Button, Input, Dialog…)
-│   ├── files/              # FileGrid, FileList, UploadZone…
-│   ├── layout/             # Sidebar, Header, CommandPalette
-│   └── shared/             # ortak bileşenler
-├── modules/                # domain modülleri
-│   ├── files/
-│   ├── auth/
-│   ├── sharing/
-│   └── admin/
-├── lib/                    # utils, cn, constants
-├── hooks/                  # custom hooks
-├── types/                  # TypeScript tipleri
-└── styles/                 # global CSS + tema
-```
-
----
-
-## Yol Haritası
-
-- [x] Proje iskeleti + UI Kit + tema
-- [ ] Dosya listesi / grid + temel CRUD
-- [ ] Upload zone + progress
-- [ ] Auth (login/register)
-- [ ] Paylaşım linkleri
-- [ ] VIP sistemi
-- [ ] Admin paneli
-- [ ] Önizleme drawer
-- [ ] Arama + filtreler
-- [ ] Mobil optimizasyon
-
----
-
-## Katkı
-
-PR’lar ve issue’lar memnuniyetle karşılanır. Önce bir issue açıp konuşalım.
-
----
-
-**DosyaX** — Dosyalarını yönet, paylaş, kontrol et.
+**DosyaX** — dosyalarını telefonda yönet.
