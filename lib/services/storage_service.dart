@@ -17,9 +17,13 @@ List<FileItem> listDirSync(String dirPath) {
   try {
     final entities = dir.listSync(followLinks: false);
     for (final e in entities) {
-      final item = FileItem.fromPathSync(e.path);
-      if (item != null) items.add(item);
-      if (items.length >= 2500) break;
+      try {
+        final item = FileItem.fromPathSync(e.path);
+        if (item != null) items.add(item);
+      } catch (_) {
+        // skip unreadable entry, keep listing
+      }
+      if (items.length >= 3000) break;
     }
   } catch (_) {
     return const [];
@@ -92,7 +96,6 @@ class StorageService {
   Future<Map<String, String>> quickPaths() async {
     try {
       final root = await primaryRoot;
-      // Ensure social tree exists first
       Map<String, String> social = {};
       try {
         social = await SocialFoldersService.instance.platformShortcuts();
@@ -119,8 +122,18 @@ class StorageService {
     }
   }
 
+  /// True only with all-files access (Android 11+ MANAGE_EXTERNAL_STORAGE).
+  Future<bool> hasFullAccess() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await Permission.manageExternalStorage.isGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> hasStorageAccess() async {
-    if (_accessCache != null) return _accessCache!;
+    if (_accessCache == true) return true;
     if (!Platform.isAndroid) {
       _accessCache = true;
       return true;
@@ -134,7 +147,11 @@ class StorageService {
         _accessCache = true;
         return true;
       }
-      if (await Permission.photos.isGranted) {
+      // Android 13+ partial media still allows browsing some dirs
+      final photos = await Permission.photos.isGranted;
+      final videos = await Permission.videos.isGranted;
+      final audio = await Permission.audio.isGranted;
+      if (photos || videos || audio) {
         _accessCache = true;
         return true;
       }
@@ -143,26 +160,57 @@ class StorageService {
     return false;
   }
 
+  /// Request everything; for full access opens system "All files" page.
   Future<bool> requestStorageAccess() async {
     if (!Platform.isAndroid) return true;
     try {
-      if (await Permission.manageExternalStorage.request().isGranted) {
+      // 1) Prefer all-files access
+      var manage = await Permission.manageExternalStorage.status;
+      if (!manage.isGranted) {
+        manage = await Permission.manageExternalStorage.request();
+      }
+      if (manage.isGranted) {
         _accessCache = true;
         return true;
       }
-      final results = await [
-        Permission.storage,
+      // Permanently denied / needs settings
+      if (manage.isPermanentlyDenied || manage.isDenied) {
+        // Still request media + storage for partial access
+        await [
+          Permission.storage,
+          Permission.photos,
+          Permission.videos,
+          Permission.audio,
+        ].request();
+      }
+
+      final storage = await Permission.storage.request();
+      final media = await [
         Permission.photos,
         Permission.videos,
         Permission.audio,
       ].request();
-      final ok = results.values.any((s) => s.isGranted);
+
+      final ok = storage.isGranted ||
+          media.values.any((s) => s.isGranted) ||
+          await Permission.manageExternalStorage.isGranted;
       _accessCache = ok;
       return ok;
     } catch (_) {
       return false;
     }
   }
+
+  Future<bool> openFullAccessSettings() async {
+    try {
+      // Opens app settings; on many devices user can enable "Files and media / All files"
+      return await openAppSettings();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void clearAccessCache() => _accessCache = null;
 
   void invalidateCache([String? path]) {
     if (path == null) {
