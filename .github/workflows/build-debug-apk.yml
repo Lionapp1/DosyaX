@@ -35,11 +35,9 @@ jobs:
       - name: Recreate Android platform
         run: |
           rm -rf android
-          # org com.lionapp1 + name dosyax => applicationId com.lionapp1.dosyax
-          # Do NOT rewrite namespace (breaks MainActivity package)
           flutter create . --project-name dosyax --org com.lionapp1 --platforms=android
 
-      - name: Label + permissions + icon
+      - name: Label + permissions + icon + stable signing
         run: |
           M="android/app/src/main/AndroidManifest.xml"
           sed -i 's/android:label="[^"]*"/android:label="DosyaX"/' "$M"
@@ -69,10 +67,8 @@ jobs:
           cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
               <path android:fillColor="#FFFFFF" android:pathData="M30,34h48a4,4 0 0,1 4,4v8H26v-8a4,4 0 0,1 4,-4z"/>
               <path android:fillColor="#93C5FD" android:pathData="M26,50h56v28a6,6 0 0,1 -6,6H32a6,6 0 0,1 -6,-6z"/>
               <path android:fillColor="#FBBF24" android:pathData="M40,62h28v6H40z"/>
@@ -88,7 +84,52 @@ jobs:
           </adaptive-icon>
           EOF
 
-          echo "applicationId:"
+          # Same keystore every build => can upgrade install
+          base64 -d signing/keystore.b64 > android/app/dosyax-release.jks
+          cat > android/key.properties << 'EOF'
+          storePassword=dosyax_store_2026
+          keyPassword=dosyax_store_2026
+          keyAlias=dosyax
+          storeFile=dosyax-release.jks
+          EOF
+
+          # Patch app/build.gradle.kts for release signing
+          APP_BUILD=android/app/build.gradle.kts
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          t = p.read_text()
+          if "key.properties" not in t:
+              inject = '''
+val keystoreProperties = java.util.Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+'''
+              t = t.replace("android {", inject + "\nandroid {", 1)
+              t = t.replace(
+                  "buildTypes {",
+                  '''signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+''',
+                  1,
+              )
+              # remove default release block remnants if duplicated - simple path:
+              p.write_text(t)
+          print("signing configured")
+          PY
+
           grep -E "applicationId|namespace" android/app/build.gradle.kts || true
 
       - name: Fix widget_test
@@ -112,7 +153,7 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos || true
 
-      - name: Build slim arm64 release APK
+      - name: Build signed arm64 release APK
         run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
       - name: Upload APK
