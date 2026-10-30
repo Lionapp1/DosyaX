@@ -1,11 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
 import '../models/file_item.dart';
 
 class FileTile extends StatelessWidget {
   final FileItem item;
   final bool grid;
+  final bool selected;
+  final bool selectMode;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const FileTile({super.key, required this.item, required this.grid});
+  const FileTile({
+    super.key,
+    required this.item,
+    required this.grid,
+    required this.selected,
+    required this.selectMode,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   IconData get _icon {
     switch (item.kind) {
@@ -53,21 +67,41 @@ class FileTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final color = _color(cs);
+    final date = DateFormat('dd MMM', 'tr_TR').format(item.modified);
 
     if (grid) {
       return Material(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+        color: selected
+            ? cs.primaryContainer.withValues(alpha: 0.55)
+            : cs.surfaceContainerHighest.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () {},
+          onTap: onTap,
+          onLongPress: onLongPress,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(_icon, size: 40, color: color),
-                const SizedBox(height: 10),
+                Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(_icon, size: 40, color: color),
+                    ),
+                    if (selectMode || selected)
+                      Icon(
+                        selected
+                            ? Icons.check_circle_rounded
+                            : Icons.circle_outlined,
+                        size: 18,
+                        color: selected ? cs.primary : cs.outline,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Text(
                   item.name,
                   maxLines: 2,
@@ -77,7 +111,7 @@ class FileTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  item.sizeLabel,
+                  item.isFolder ? date : item.sizeLabel,
                   style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
                 ),
               ],
@@ -88,13 +122,33 @@ class FileTile extends StatelessWidget {
     }
 
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.15),
-        child: Icon(_icon, color: color, size: 22),
+      selected: selected,
+      selectedTileColor: cs.primaryContainer.withValues(alpha: 0.35),
+      leading: Stack(
+        children: [
+          CircleAvatar(
+            backgroundColor: color.withValues(alpha: 0.15),
+            child: Icon(_icon, color: color, size: 22),
+          ),
+          if (selectMode || selected)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                size: 14,
+                color: selected ? cs.primary : cs.outline,
+              ),
+            ),
+        ],
       ),
       title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(item.sizeLabel),
-      onTap: () {},
+      subtitle: Text('${item.sizeLabel}  ·  $date'),
+      trailing: item.isFolder
+          ? Icon(Icons.chevron_right_rounded, color: cs.outline)
+          : null,
+      onTap: onTap,
+      onLongPress: onLongPress,
     );
   }
 }
