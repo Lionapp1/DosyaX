@@ -35,28 +35,27 @@ class BrowserController extends ChangeNotifier {
   bool get selectMode => _selectMode;
   int get selectedCount => _selected.length;
 
-  List<String> get breadcrumbs {
-    if (_currentPath.isEmpty) return [];
-    final parts = p.split(_currentPath).where((e) => e.isNotEmpty).toList();
-    return parts;
-  }
-
   Future<void> init() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      _quick = await _storage.quickPaths();
-      _currentPath = await _storage.primaryRoot;
-      await refresh();
+      // Parallel: quick chips + start folder
+      final results = await Future.wait([
+        _storage.quickPaths(),
+        _storage.startPath,
+      ]);
+      _quick = results[0] as Map<String, String>;
+      _currentPath = results[1] as String;
+      await refresh(force: true);
     } catch (e) {
-      _error = 'Depolama acilamadi: $e';
+      _error = 'Depolama acilamadi';
       _loading = false;
       notifyListeners();
     }
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool force = false}) async {
     _loading = true;
     _error = null;
     notifyListeners();
@@ -65,14 +64,14 @@ class BrowserController extends ChangeNotifier {
         _currentPath,
         sortBy: _sortBy,
         ascending: _ascending,
-        query: _query,
         filterKind: _filterKind,
+        forceRefresh: force,
       );
-      _visible = List.of(_items);
+      _applyQuery();
       _selected.removeWhere((id) => !_items.any((i) => i.id == id));
       _loading = false;
       notifyListeners();
-    } catch (e) {
+    } catch (_) {
       _error = 'Klasor okunamadi';
       _items = [];
       _visible = [];
@@ -81,7 +80,18 @@ class BrowserController extends ChangeNotifier {
     }
   }
 
+  void _applyQuery() {
+    if (_query.isEmpty) {
+      _visible = List.of(_items);
+    } else {
+      final q = _query.toLowerCase();
+      _visible =
+          _items.where((i) => i.name.toLowerCase().contains(q)).toList();
+    }
+  }
+
   Future<void> openPath(String path) async {
+    if (path == _currentPath && _items.isNotEmpty) return;
     _currentPath = path;
     _query = '';
     _selectMode = false;
@@ -99,14 +109,7 @@ class BrowserController extends ChangeNotifier {
 
   void setQuery(String q) {
     _query = q;
-    // local filter for snappy search
-    if (q.isEmpty) {
-      _visible = List.of(_items);
-    } else {
-      final lower = q.toLowerCase();
-      _visible =
-          _items.where((i) => i.name.toLowerCase().contains(lower)).toList();
-    }
+    _applyQuery();
     notifyListeners();
   }
 
@@ -122,7 +125,7 @@ class BrowserController extends ChangeNotifier {
 
   void setFilter(FileKind? kind) {
     _filterKind = kind;
-    refresh();
+    refresh(force: true);
   }
 
   void toggleGrid() {
@@ -142,11 +145,7 @@ class BrowserController extends ChangeNotifier {
     } else {
       _selected.add(item.id);
     }
-    if (_selected.isEmpty) {
-      _selectMode = false;
-    } else {
-      _selectMode = true;
-    }
+    _selectMode = _selected.isNotEmpty;
     notifyListeners();
   }
 
@@ -167,7 +166,7 @@ class BrowserController extends ChangeNotifier {
     }
     _selected.clear();
     _selectMode = false;
-    await refresh();
+    await refresh(force: true);
   }
 
   Future<void> shareSelected() async {
@@ -179,13 +178,13 @@ class BrowserController extends ChangeNotifier {
 
   Future<bool> renameItem(FileItem item, String newName) async {
     final ok = await _storage.rename(item, newName);
-    if (ok) await refresh();
+    if (ok) await refresh(force: true);
     return ok;
   }
 
   Future<bool> createFolder(String name) async {
     final ok = await _storage.createFolder(_currentPath, name);
-    if (ok) await refresh();
+    if (ok) await refresh(force: true);
     return ok;
   }
 
