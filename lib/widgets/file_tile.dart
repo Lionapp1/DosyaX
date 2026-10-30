@@ -47,7 +47,7 @@ class FileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = FileColors.of(item.kind);
+    final color = Color(FileColorInt.of(item.kind));
     final date = DateFormat('dd.MM.yy').format(item.modified);
 
     if (grid) {
