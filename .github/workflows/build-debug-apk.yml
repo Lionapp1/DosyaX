@@ -35,17 +35,12 @@ jobs:
       - name: Recreate Android platform
         run: |
           rm -rf android
-          flutter create . --project-name dosyax --org com.lionapp1.dosyax --platforms=android
+          # org com.lionapp1 + name dosyax => applicationId com.lionapp1.dosyax
+          # Do NOT rewrite namespace (breaks MainActivity package)
+          flutter create . --project-name dosyax --org com.lionapp1 --platforms=android
 
-      - name: Unique applicationId + label + permissions + icon
+      - name: Label + permissions + icon
         run: |
-          # Unique package avoids INSTALL_FAILED conflicts with old builds
-          APP_BUILD="android/app/build.gradle.kts"
-          if [ -f "$APP_BUILD" ]; then
-            sed -i 's/namespace = .*/namespace = "com.lionapp1.dosyax"/' "$APP_BUILD"
-            sed -i 's/applicationId = .*/applicationId = "com.lionapp1.dosyax"/' "$APP_BUILD"
-          fi
-
           M="android/app/src/main/AndroidManifest.xml"
           sed -i 's/android:label="[^"]*"/android:label="DosyaX"/' "$M"
           if ! grep -q MANAGE_EXTERNAL_STORAGE "$M"; then
@@ -60,16 +55,17 @@ jobs:
             sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/' "$M"
           fi
 
-          # Brand adaptive icon (vector)
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/res/drawable
           mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+
           cat > android/app/src/main/res/values/ic_launcher_colors.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="ic_launcher_background">#1D4ED8</color>
           </resources>
           EOF
+
           cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -77,20 +73,13 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <path
-                  android:fillColor="#FFFFFF"
-                  android:pathData="M30,34h48a4,4 0 0,1 4,4v8H26v-8a4,4 0 0,1 4,-4z"/>
-              <path
-                  android:fillColor="#93C5FD"
-                  android:pathData="M26,50h56v28a6,6 0 0,1 -6,6H32a6,6 0 0,1 -6,-6z"/>
-              <path
-                  android:fillColor="#FBBF24"
-                  android:pathData="M40,62h28v6H40z"/>
-              <path
-                  android:fillColor="#FBBF24"
-                  android:pathData="M40,72h18v6H40z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M30,34h48a4,4 0 0,1 4,4v8H26v-8a4,4 0 0,1 4,-4z"/>
+              <path android:fillColor="#93C5FD" android:pathData="M26,50h56v28a6,6 0 0,1 -6,6H32a6,6 0 0,1 -6,-6z"/>
+              <path android:fillColor="#FBBF24" android:pathData="M40,62h28v6H40z"/>
+              <path android:fillColor="#FBBF24" android:pathData="M40,72h18v6H40z"/>
           </vector>
           EOF
+
           cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -98,6 +87,9 @@ jobs:
               <foreground android:drawable="@drawable/ic_launcher_foreground"/>
           </adaptive-icon>
           EOF
+
+          echo "applicationId:"
+          grep -E "applicationId|namespace" android/app/build.gradle.kts || true
 
       - name: Fix widget_test
         run: |
