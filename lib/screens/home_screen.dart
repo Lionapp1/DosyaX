@@ -10,6 +10,8 @@ import '../services/storage_service.dart';
 import '../services/transfer_service.dart';
 import '../state/browser_controller.dart';
 import '../widgets/file_tile.dart';
+import '../widgets/path_breadcrumbs.dart';
+import '../widgets/quick_chip.dart';
 import 'image_viewer_screen.dart';
 import 'video_player_screen.dart';
 
@@ -17,12 +19,15 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   late final BrowserController _browser;
   final _searchCtrl = TextEditingController();
+
+  /// Called from ShellScreen system back.
+  Future<bool> handleSystemBack() => _browser.handleSystemBack();
 
   @override
   void initState() {
@@ -30,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _browser = BrowserController();
     _browser.init();
     SocialFoldersService.instance.ensureCreated().then((_) {
-      // refresh quick chips with Sosyal
       _browser.init();
     });
     if (!AppSettings.instance.preferGrid) {
@@ -72,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
+    // Other types: try in-app share/open
     await StorageService.instance.open(item);
   }
 
@@ -124,7 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _pickDestAndTransfer(FileItem item, TransferOp op) async {
     final social = await SocialFoldersService.instance.ensureCreated();
-    final suggested = await SocialFoldersService.instance.suggestDestFor(item.path);
+    final suggested =
+        await SocialFoldersService.instance.suggestDestFor(item.path);
     if (!mounted) return;
 
     final dest = await showModalBottomSheet<String>(
@@ -137,29 +143,34 @@ class _HomeScreenState extends State<HomeScreen> {
             shrinkWrap: true,
             children: [
               ListTile(
-                title: Text(op == TransferOp.move ? 'Nereye tasinsin?' : 'Nereye kopyalansin?'),
-                subtitle: const Text('Islem arka planda devam eder — beklemene gerek yok'),
+                leading: Icon(
+                  op == TransferOp.move
+                      ? Icons.drive_file_move_rounded
+                      : Icons.copy_rounded,
+                ),
+                title: Text(
+                  op == TransferOp.move ? 'Nereye tasinsin?' : 'Nereye kopyalansin?',
+                ),
+                subtitle: const Text('Arka planda devam eder'),
               ),
               ListTile(
                 leading: const Icon(Icons.auto_awesome),
                 title: const Text('Akilli hedef (sosyal)'),
-                subtitle: Text(suggested),
+                subtitle: Text(suggested, maxLines: 2),
                 onTap: () => Navigator.pop(ctx, suggested),
               ),
               const Divider(),
               ...entries.map(
                 (e) => ListTile(
-                  leading: const Icon(Icons.folder_outlined),
+                  leading: Icon(iconForQuickLabel(e.key)),
                   title: Text(e.key),
-                  subtitle: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    e.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   onTap: () => Navigator.pop(ctx, e.value),
                 ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.folder_special),
-                title: const Text('Bu klasor (mevcut konum degil)'),
-                subtitle: Text(_browser.currentPath),
-                onTap: () => Navigator.pop(ctx, _browser.currentPath),
               ),
             ],
           ),
@@ -178,8 +189,8 @@ class _HomeScreenState extends State<HomeScreen> {
       SnackBar(
         content: Text(
           op == TransferOp.move
-              ? 'Tasimaya alindi — arka planda suruyor'
-              : 'Kopyalamaya alindi — arka planda suruyor',
+              ? 'Tasimaya alindi — arka planda'
+              : 'Kopyalamaya alindi — arka planda',
         ),
       ),
     );
@@ -197,7 +208,12 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.info_outline),
+                leading: Icon(
+                  item.isFolder
+                      ? Icons.folder_rounded
+                      : Icons.insert_drive_file_rounded,
+                  color: cs.primary,
+                ),
                 title: Text(item.name),
                 subtitle: Text('${item.sizeLabel}\n${item.path}'),
               ),
@@ -213,8 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ListTile(
                 leading: const Icon(Icons.copy_rounded),
-                title: const Text('Kopyala (arka plan)'),
-                subtitle: const Text('Buyuk dosyalarda UI kilitlenmez'),
+                title: const Text('Kopyala'),
+                subtitle: const Text('Arka plan kuyrugu'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickDestAndTransfer(item, TransferOp.copy);
@@ -222,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.drive_file_move_rounded),
-                title: const Text('Tasi (arka plan)'),
+                title: const Text('Tasi'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickDestAndTransfer(item, TransferOp.move);
@@ -231,19 +247,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ListTile(
                 leading: const Icon(Icons.share_location_rounded),
                 title: const Text('Sosyal klasore akilli kopyala'),
-                subtitle: const Text('IG / WA / TG / Threads otomatik'),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final dest =
-                      await SocialFoldersService.instance.suggestDestFor(item.path);
+                  final dest = await SocialFoldersService.instance
+                      .suggestDestFor(item.path);
                   TransferService.instance.enqueue(
                     sourcePath: item.path,
                     destDir: dest,
                     op: TransferOp.copy,
-                  );
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Sosyal hedefe alindi: $dest')),
                   );
                 },
               ),
@@ -253,7 +264,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: const Text('Ozel alana kopyala'),
                   onTap: () async {
                     Navigator.pop(ctx);
-                    final ok = await PrivateVault.instance.importFile(item.path);
+                    final ok =
+                        await PrivateVault.instance.importFile(item.path);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -323,12 +335,20 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () => b.toggleSelectMode(false),
             )
           : IconButton(
-              icon: const Icon(Icons.arrow_upward_rounded),
-              tooltip: 'Ust klasor',
-              onPressed: b.goUp,
+              icon: Icon(
+                b.canGoUp
+                    ? Icons.arrow_back_rounded
+                    : Icons.folder_rounded,
+              ),
+              tooltip: b.canGoUp ? 'Geri' : 'Kok',
+              onPressed: b.canGoUp ? b.goUp : null,
             ),
       title: Text(
-        b.selectMode ? '${b.selectedCount} secili' : 'DosyaX',
+        b.selectMode
+            ? '${b.selectedCount} secili'
+            : (b.currentPath.isEmpty
+                ? 'DosyaX'
+                : b.currentPath.split('/').where((e) => e.isNotEmpty).last),
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
       actions: [
@@ -377,6 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           PopupMenuButton<String>(
             tooltip: 'Sirala / Filtre',
+            icon: const Icon(Icons.tune_rounded),
             onSelected: (v) {
               switch (v) {
                 case 'name':
@@ -398,15 +419,71 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'name', child: Text('Ada gore')),
-              PopupMenuItem(value: 'size', child: Text('Boyuta gore')),
-              PopupMenuItem(value: 'date', child: Text('Tarihe gore')),
+              PopupMenuItem(
+                value: 'name',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.sort_by_alpha),
+                  title: Text('Ada gore'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'size',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.data_usage),
+                  title: Text('Boyuta gore'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'date',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.schedule),
+                  title: Text('Tarihe gore'),
+                ),
+              ),
               PopupMenuDivider(),
-              PopupMenuItem(value: 'all', child: Text('Tum turler')),
-              PopupMenuItem(value: 'img', child: Text('Resimler')),
-              PopupMenuItem(value: 'vid', child: Text('Videolar')),
-              PopupMenuItem(value: 'doc', child: Text('Belgeler')),
-              PopupMenuItem(value: 'aud', child: Text('Ses')),
+              PopupMenuItem(
+                value: 'all',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.apps),
+                  title: Text('Tum turler'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'img',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.image),
+                  title: Text('Resimler'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'vid',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.movie),
+                  title: Text('Videolar'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'doc',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.description),
+                  title: Text('Belgeler'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'aud',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.audiotrack),
+                  title: Text('Ses'),
+                ),
+              ),
             ],
           ),
           IconButton(
@@ -441,14 +518,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       children: b.quick.entries.map((e) {
-                        final active = b.currentPath == e.value;
+                        final active = b.currentPath == e.value ||
+                            b.currentPath.startsWith('${e.value}/');
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
+                          child: QuickChip(
+                            label: e.key,
                             selected: active,
-                            label: Text(e.key),
-                            onSelected: (_) => b.openPath(e.value),
-                            visualDensity: VisualDensity.compact,
+                            onTap: () => b.openPath(e.value),
                           ),
                         );
                       }).toList(),
@@ -456,20 +533,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 Container(
                   color: cs.surface,
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        b.currentPath,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: cs.onSurfaceVariant,
-                        ),
+                      PathBreadcrumbs(
+                        path: b.currentPath,
+                        rootPath: b.rootPath,
+                        onTapSegment: b.openPath,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: _searchCtrl,
                         onChanged: b.setQuery,
@@ -532,9 +605,10 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Text(b.error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(
+              FilledButton.icon(
                 onPressed: () => b.refresh(force: true),
-                child: const Text('Tekrar dene'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tekrar dene'),
               ),
             ],
           ),
@@ -543,9 +617,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (b.items.isEmpty) {
       return Center(
-        child: Text(
-          'Bos veya erisilemiyor',
-          style: TextStyle(color: cs.onSurfaceVariant),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_off_outlined, size: 48, color: cs.outline),
+            const SizedBox(height: 12),
+            Text(
+              'Bos klasor',
+              style: TextStyle(color: cs.onSurfaceVariant),
+            ),
+          ],
         ),
       );
     }
