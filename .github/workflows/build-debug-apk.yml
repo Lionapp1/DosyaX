@@ -32,57 +32,43 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
-      - name: Recreate Android platform (Flutter template AGP)
+      - name: Recreate Android platform
         run: |
           rm -rf android
           flutter create . --project-name dosyax --org com.dosyax --platforms=android
 
-      - name: Patch AndroidManifest storage permissions
+      - name: Patch AndroidManifest permissions
         run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          python3 << 'PY'
-          from pathlib import Path
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          t = p.read_text()
-          perms = """
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-"""
-          if "MANAGE_EXTERNAL_STORAGE" not in t:
-              t = t.replace("<manifest", "<manifest", 1)
-              t = t.replace(
-                  ">\n",
-                  ">\n" + perms,
-                  1,
-              )
-          if "requestLegacyExternalStorage" not in t:
-              t = t.replace(
-                  "<application",
-                  '<application android:requestLegacyExternalStorage="true"',
-                  1,
-              )
-          p.write_text(t)
-          print("Manifest patched")
-          PY
+          M="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q MANAGE_EXTERNAL_STORAGE "$M"; then
+            sed -i 's|<manifest |<manifest |' "$M"
+            sed -i '/<manifest /a\    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' "$M"
+            sed -i '/READ_EXTERNAL_STORAGE/a\    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />' "$M"
+            sed -i '/WRITE_EXTERNAL_STORAGE/a\    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />' "$M"
+            sed -i '/READ_MEDIA_IMAGES/a\    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />' "$M"
+            sed -i '/READ_MEDIA_VIDEO/a\    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />' "$M"
+            sed -i '/READ_MEDIA_AUDIO/a\    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />' "$M"
+          fi
+          if ! grep -q requestLegacyExternalStorage "$M"; then
+            sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/' "$M"
+          fi
+          echo "Manifest:"
+          head -n 25 "$M"
 
-      - name: Fix generated widget_test
+      - name: Fix widget_test
         run: |
-          cat > test/widget_test.dart << 'EOF'
-          import 'package:flutter_test/flutter_test.dart';
-          import 'package:dosyax/main.dart';
-
-          void main() {
-            testWidgets('DosyaX smoke test', (WidgetTester tester) async {
-              await tester.pumpWidget(const DosyaXApp());
-              await tester.pump();
-              expect(find.byType(MaterialApp), findsOneWidget);
-            });
-          }
-          EOF
+          printf '%s\n' \
+            "import 'package:flutter_test/flutter_test.dart';" \
+            "import 'package:dosyax/main.dart';" \
+            "" \
+            "void main() {" \
+            "  testWidgets('smoke', (tester) async {" \
+            "    await tester.pumpWidget(const DosyaXApp());" \
+            "    await tester.pump();" \
+            "    expect(find.byType(MaterialApp), findsOneWidget);" \
+            "  });" \
+            "}" \
+            > test/widget_test.dart
 
       - name: Get dependencies
         run: flutter pub get
