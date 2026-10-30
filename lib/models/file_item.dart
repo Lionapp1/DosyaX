@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' show Color;
 
 import 'package:path/path.dart' as p;
 
@@ -7,19 +6,19 @@ enum FileKind { folder, image, video, audio, document, archive, code, apk, other
 
 enum SortBy { name, size, modified }
 
-/// Distinctive brand colors per file kind (DosyaX identity).
-class FileColors {
-  static const folder = Color(0xFFF59E0B); // amber
-  static const image = Color(0xFF10B981); // emerald
-  static const video = Color(0xFFEC4899); // pink
-  static const audio = Color(0xFF8B5CF6); // violet
-  static const document = Color(0xFF3B82F6); // blue
-  static const archive = Color(0xFFF97316); // orange
-  static const code = Color(0xFF06B6D4); // cyan
-  static const apk = Color(0xFF22C55E); // green
-  static const other = Color(0xFF94A3B8); // slate
+/// ARGB ints — no dart:ui (safe for isolates / background listing).
+class FileColorInt {
+  static const folder = 0xFFF59E0B;
+  static const image = 0xFF10B981;
+  static const video = 0xFFEC4899;
+  static const audio = 0xFF8B5CF6;
+  static const document = 0xFF3B82F6;
+  static const archive = 0xFFF97316;
+  static const code = 0xFF06B6D4;
+  static const apk = 0xFF22C55E;
+  static const other = 0xFF94A3B8;
 
-  static Color of(FileKind kind) {
+  static int of(FileKind kind) {
     switch (kind) {
       case FileKind.folder:
         return folder;
@@ -103,7 +102,6 @@ class FileItem {
     return FileKind.other;
   }
 
-  /// Fast path: sync stat, used inside isolate.
   static FileItem? fromPathSync(String path) {
     try {
       final name = p.basename(path);
