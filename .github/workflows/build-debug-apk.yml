@@ -37,11 +37,10 @@ jobs:
           rm -rf android
           flutter create . --project-name dosyax --org com.lionapp1 --platforms=android
 
-      - name: Patch manifest icon signing
+      - name: Patch manifest icon + stable keystore
         run: |
           python3 tooling/patch_android_ui.py
           python3 tooling/patch_android_signing.py
-          grep -E "applicationId|namespace|signingConfig" android/app/build.gradle.kts || true
 
       - name: Fix widget_test
         run: |
@@ -64,7 +63,7 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos || true
 
-      - name: Build signed arm64 release APK
+      - name: Build arm64 release APK
         run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
       - name: Upload APK
