@@ -1,7 +1,7 @@
 name: dosyax
 description: Modern Android dosya yoneticisi - DosyaX
 publish_to: "none"
-version: 0.5.1+51
+version: 0.5.2+52
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
