@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,9 +8,18 @@ import 'screens/permission_screen.dart';
 import 'services/storage_service.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  runApp(const DosyaXApp());
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } catch (_) {}
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+    };
+    runApp(const DosyaXApp());
+  }, (error, stack) {
+    debugPrint('DosyaX uncaught: $error\n$stack');
+  });
 }
 
 class DosyaXApp extends StatelessWidget {
@@ -28,7 +39,6 @@ class DosyaXApp extends StatelessWidget {
           seedColor: _seed,
           brightness: Brightness.light,
         ),
-        visualDensity: VisualDensity.standard,
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
@@ -36,9 +46,24 @@ class DosyaXApp extends StatelessWidget {
           seedColor: _seed,
           brightness: Brightness.dark,
         ),
-        visualDensity: VisualDensity.standard,
       ),
       home: const _Root(),
+      builder: (context, child) {
+        ErrorWidget.builder = (details) {
+          return Material(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Bir hata olustu\n${details.exceptionAsString()}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        };
+        return child ?? const SizedBox.shrink();
+      },
     );
   }
 }
@@ -52,6 +77,7 @@ class _Root extends StatefulWidget {
 
 class _RootState extends State<_Root> {
   bool? _granted;
+  String? _bootError;
 
   @override
   void initState() {
@@ -60,13 +86,51 @@ class _RootState extends State<_Root> {
   }
 
   Future<void> _check() async {
-    final ok = await StorageService.instance.hasStorageAccess();
-    if (mounted) setState(() => _granted = ok);
+    try {
+      final ok = await StorageService.instance.hasStorageAccess();
+      if (mounted) setState(() => _granted = ok);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _bootError = e.toString();
+          _granted = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
+    if (_bootError != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Baslatma hatasi', style: TextStyle(fontSize: 18)),
+                const SizedBox(height: 8),
+                Text(_bootError!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {
+                      _bootError = null;
+                      _granted = true;
+                    });
+                  },
+                  child: const Text('Yine de devam'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_granted == null) {
       return Scaffold(
         backgroundColor: cs.surface,
@@ -98,11 +162,13 @@ class _RootState extends State<_Root> {
         ),
       );
     }
+
     if (_granted == false) {
       return PermissionScreen(
         onGranted: () => setState(() => _granted = true),
       );
     }
+
     return const HomeScreen();
   }
 }
