@@ -5,7 +5,7 @@ MANIFEST = Path("android/app/src/main/AndroidManifest.xml")
 
 PERMS = [
     '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
-    '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />',
+    '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
     '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
     '    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />',
     '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />',
@@ -15,18 +15,24 @@ PERMS = [
 
 def main() -> None:
     t = MANIFEST.read_text()
+    # Ensure tools namespace for ignore attributes if needed
+    if "xmlns:tools" not in t:
+        t = t.replace(
+            "<manifest",
+            '<manifest xmlns:tools="http://schemas.android.com/tools"',
+            1,
+        )
+
     t = t.replace('android:label="dosyax"', 'android:label="DosyaX"')
-    t = t.replace("android:label=\"dosyax\"", 'android:label="DosyaX"')
 
     if "MANAGE_EXTERNAL_STORAGE" not in t:
         insert = "\n".join(PERMS) + "\n"
-        # after <manifest ...> line
         lines = t.splitlines(keepends=True)
         out = []
         done = False
         for line in lines:
             out.append(line)
-            if not done and line.lstrip().startswith("<manifest"):
+            if not done and "<manifest" in line:
                 out.append(insert)
                 done = True
         t = "".join(out)
@@ -38,9 +44,16 @@ def main() -> None:
             1,
         )
 
+    # PreserveExternalStorage helps some OEM file managers
+    if "preserveLegacyExternalStorage" not in t:
+        t = t.replace(
+            'android:requestLegacyExternalStorage="true"',
+            'android:requestLegacyExternalStorage="true" android:preserveLegacyExternalStorage="true"',
+            1,
+        )
+
     MANIFEST.write_text(t)
 
-    # icons
     values = Path("android/app/src/main/res/values")
     drawable = Path("android/app/src/main/res/drawable")
     mipmap = Path("android/app/src/main/res/mipmap-anydpi-v26")
