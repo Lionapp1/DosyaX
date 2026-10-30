@@ -56,7 +56,7 @@ class FileTile extends StatelessWidget {
 
     if (grid) {
       return Material(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+        color: cs.surfaceContainerHighest.withOpacity(0.35),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -89,7 +89,7 @@ class FileTile extends StatelessWidget {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.15),
+        backgroundColor: color.withOpacity(0.15),
         child: Icon(_icon, color: color, size: 22),
       ),
       title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
