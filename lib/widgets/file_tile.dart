@@ -67,7 +67,7 @@ class FileTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final color = _color(cs);
-    final date = DateFormat('dd MMM', 'tr_TR').format(item.modified);
+    final date = DateFormat('dd.MM.yy').format(item.modified);
 
     if (grid) {
       return Material(
