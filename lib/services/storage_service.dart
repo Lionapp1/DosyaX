@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/file_item.dart';
+import 'social_folders_service.dart';
 
 List<FileItem> listDirSync(String dirPath) {
   final dir = Directory(dirPath);
@@ -91,9 +92,16 @@ class StorageService {
   Future<Map<String, String>> quickPaths() async {
     try {
       final root = await primaryRoot;
+      // Ensure social tree exists first
+      Map<String, String> social = {};
+      try {
+        social = await SocialFoldersService.instance.platformShortcuts();
+      } catch (_) {}
+
       final map = <String, String>{
         'Depolama': root,
         'Indirilenler': p.join(root, 'Download'),
+        ...social,
         'Fotograf': p.join(root, 'DCIM'),
         'Resimler': p.join(root, 'Pictures'),
         'Videolar': p.join(root, 'Movies'),
@@ -130,9 +138,7 @@ class StorageService {
         _accessCache = true;
         return true;
       }
-    } catch (_) {
-      // Plugin edge cases — don't crash app
-    }
+    } catch (_) {}
     _accessCache = false;
     return false;
   }
@@ -178,7 +184,6 @@ class StorageService {
     if (!forceRefresh && _listCache.containsKey(dirPath)) {
       items = List<FileItem>.of(_listCache[dirPath]!);
     } else {
-      // Same-isolate async boundary — stable, no compute/isolate crashes
       items = await Future<List<FileItem>>.microtask(() => listDirSync(dirPath));
       _listCache[dirPath] = List<FileItem>.of(items);
       if (_listCache.length > _cacheMax) {
