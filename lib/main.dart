@@ -8,20 +8,23 @@ import 'screens/shell_screen.dart';
 import 'services/app_settings.dart';
 import 'services/storage_service.dart';
 
-void main() {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    // Avoid edge-to-edge jump: use stable system UI
-    try {
-      await SystemChrome.setEnabledSystemUIMode(
-        SystemUiMode.manual,
-        overlays: SystemUiOverlay.values,
-      );
-    } catch (_) {}
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+  } catch (_) {}
+  try {
     await AppSettings.instance.load();
-    FlutterError.onError = (details) {
-      FlutterError.presentError(details);
-    };
+  } catch (_) {}
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+  };
+
+  runZonedGuarded(() {
     runApp(const DosyaXApp());
   }, (error, stack) {
     debugPrint('DosyaX uncaught: $error\n$stack');
