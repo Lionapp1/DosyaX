@@ -13,6 +13,12 @@ IconData iconForQuickLabel(String label) {
     return Icons.send_rounded;
   }
   if (l.contains('threads')) return Icons.alternate_email_rounded;
+  if (l == 'x' || l.contains('twitter') || l.startsWith('~x')) {
+    return Icons.tag_rounded;
+  }
+  if (l == 'android') return Icons.android_rounded;
+  if (l == 'data') return Icons.folder_special_rounded;
+  if (l == 'obb') return Icons.inventory_2_rounded;
   if (l.contains('fotograf') || l.contains('resim') || l.contains('dcim')) {
     return Icons.photo_library_rounded;
   }
@@ -43,7 +49,11 @@ class QuickChip extends StatelessWidget {
     return FilterChip(
       selected: selected,
       showCheckmark: false,
-      avatar: Icon(icon, size: 16, color: selected ? cs.onSecondaryContainer : cs.primary),
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: selected ? cs.onSecondaryContainer : cs.primary,
+      ),
       label: Text(label),
       onSelected: (_) => onTap(),
       visualDensity: VisualDensity.compact,
