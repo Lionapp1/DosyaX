@@ -7,7 +7,6 @@ import 'services/storage_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Don't block first frame on heavy work
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const DosyaXApp());
 }
@@ -15,7 +14,7 @@ void main() {
 class DosyaXApp extends StatelessWidget {
   const DosyaXApp({super.key});
 
-  static const _seed = Color(0xFF1D4ED8); // DosyaX blue
+  static const _seed = Color(0xFF1D4ED8);
 
   @override
   Widget build(BuildContext context) {
@@ -30,11 +29,6 @@ class DosyaXApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         visualDensity: VisualDensity.standard,
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-          },
-        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
@@ -62,7 +56,6 @@ class _RootState extends State<_Root> {
   @override
   void initState() {
     super.initState();
-    // Defer permission check one frame so splash paints immediately
     WidgetsBinding.instance.addPostFrameCallback((_) => _check());
   }
 
