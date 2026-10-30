@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write a complete android/app/build.gradle.kts with release signing."""
+"""Write android/app/build.gradle.kts with release signing (AGP 9 safe)."""
 import base64
 from pathlib import Path
 
@@ -8,19 +8,17 @@ KEY_PROPS = Path("android/key.properties")
 JKS = Path("android/app/dosyax-release.jks")
 B64 = Path("signing/keystore.b64")
 
-CONTENT = r'''import java.util.Properties
+# plugins {} MUST be first for new AGP
+CONTENT = r'''plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
+}
 
-val keystoreProperties = Properties()
+val keystoreProperties = java.util.Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
-}
-
-plugins {
-    id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
@@ -29,12 +27,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
@@ -58,6 +52,12 @@ android {
         release {
             signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
