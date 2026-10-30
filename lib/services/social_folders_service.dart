@@ -3,14 +3,22 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'storage_service.dart';
+import 'transfer_service.dart';
 
-/// DosyaX/Sosyal/... auto structure + links to app media folders when present.
+/// DosyaX/Sosyal/... + auto-discover WhatsApp / Telegram / IG / Threads media.
 class SocialFoldersService {
   SocialFoldersService._();
   static final SocialFoldersService instance = SocialFoldersService._();
 
   static const platforms = ['Instagram', 'WhatsApp', 'Telegram', 'Threads'];
   static const subFolders = ['Fotograflar', 'Videolar', 'Belgeler', 'Hikayeler'];
+
+  static const _imageExt = {
+    '.jpg', '.jpeg', '.png', '.webp', '.heic', '.gif', '.bmp',
+  };
+  static const _videoExt = {
+    '.mp4', '.mkv', '.mov', '.webm', '.3gp', '.avi',
+  };
 
   String? _sosyalRoot;
 
@@ -23,7 +31,6 @@ class SocialFoldersService {
     return path;
   }
 
-  /// Create full tree once (idempotent).
   Future<Map<String, String>> ensureCreated() async {
     final base = await sosyalRoot;
     final paths = <String, String>{'Sosyal': base};
@@ -33,23 +40,14 @@ class SocialFoldersService {
       await Directory(plat).create(recursive: true);
       paths[platform] = plat;
       for (final sub in subFolders) {
-        // Threads/WhatsApp may not need Hikayeler equally — still create for consistency
         if (platform == 'Threads' && sub == 'Belgeler') continue;
         final dir = Directory(p.join(plat, sub));
         if (!await dir.exists()) await dir.create(recursive: true);
       }
     }
 
-    // Discover native app folders if they exist (read-only shortcuts)
-    final root = await StorageService.instance.primaryRoot;
-    final native = <String, String>{
-      'WA Medya': p.join(root, 'WhatsApp', 'Media'),
-      'WA Resim': p.join(root, 'WhatsApp', 'Media', 'WhatsApp Images'),
-      'WA Video': p.join(root, 'WhatsApp', 'Media', 'WhatsApp Video'),
-      'Telegram': p.join(root, 'Telegram'),
-      'IG': p.join(root, 'Android', 'media', 'com.instagram.android'),
-    };
-    for (final e in native.entries) {
+    // Native shortcuts (browse in place)
+    for (final e in await nativeSources().then((m) => m.entries)) {
       if (Directory(e.value).existsSync()) {
         paths['~${e.key}'] = e.value;
       }
@@ -58,26 +56,68 @@ class SocialFoldersService {
     return paths;
   }
 
+  /// Known locations where social apps store media on Android.
+  Future<Map<String, List<String>>> nativeSources() async {
+    final root = await StorageService.instance.primaryRoot;
+    return {
+      'WhatsApp': [
+        p.join(root, 'WhatsApp', 'Media', 'WhatsApp Images'),
+        p.join(root, 'WhatsApp', 'Media', 'WhatsApp Video'),
+        p.join(root, 'WhatsApp', 'Media', 'WhatsApp Documents'),
+        p.join(root, 'WhatsApp', 'Media', 'WhatsApp Animated Gifs'),
+        p.join(root, 'Android', 'media', 'com.whatsapp', 'WhatsApp', 'Media',
+            'WhatsApp Images'),
+        p.join(root, 'Android', 'media', 'com.whatsapp', 'WhatsApp', 'Media',
+            'WhatsApp Video'),
+        p.join(root, 'Android', 'media', 'com.whatsapp.w4b', 'WhatsApp Business',
+            'Media', 'WhatsApp Images'),
+      ],
+      'Telegram': [
+        p.join(root, 'Telegram', 'Telegram Images'),
+        p.join(root, 'Telegram', 'Telegram Video'),
+        p.join(root, 'Telegram', 'Telegram Documents'),
+        p.join(root, 'Telegram', 'Telegram Files'),
+        p.join(root, 'Android', 'data', 'org.telegram.messenger', 'files'),
+        p.join(root, 'Android', 'media', 'org.telegram.messenger'),
+      ],
+      'Instagram': [
+        p.join(root, 'Pictures', 'Instagram'),
+        p.join(root, 'DCIM', 'Instagram'),
+        p.join(root, 'Android', 'media', 'com.instagram.android'),
+        p.join(root, 'Android', 'data', 'com.instagram.android', 'files'),
+      ],
+      'Threads': [
+        p.join(root, 'Pictures', 'Threads'),
+        p.join(root, 'DCIM', 'Threads'),
+        p.join(root, 'Android', 'media', 'com.instagram.barcelona'),
+        p.join(root, 'Android', 'data', 'com.instagram.barcelona', 'files'),
+      ],
+    };
+  }
+
   Future<Map<String, String>> platformShortcuts() async {
     final all = await ensureCreated();
     return {
       for (final e in all.entries)
-        if (platforms.contains(e.key) || e.key == 'Sosyal') e.key: e.value,
+        if (platforms.contains(e.key) || e.key == 'Sosyal' || e.key.startsWith('~'))
+          e.key: e.value,
     };
   }
 
-  /// Guess target under Sosyal from filename / source path.
   Future<String> suggestDestFor(String sourcePath) async {
     final base = await sosyalRoot;
     final name = p.basename(sourcePath).toLowerCase();
     final full = sourcePath.toLowerCase();
 
     String platform = 'Instagram';
-    if (full.contains('whatsapp') || name.startsWith('img-') || name.startsWith('vid-')) {
+    if (full.contains('whatsapp') ||
+        name.startsWith('img-') ||
+        name.startsWith('vid-') ||
+        name.startsWith('aud-')) {
       platform = 'WhatsApp';
-    } else if (full.contains('telegram') || name.startsWith('image_') && full.contains('telegram')) {
+    } else if (full.contains('telegram') || full.contains('org.telegram')) {
       platform = 'Telegram';
-    } else if (full.contains('threads')) {
+    } else if (full.contains('threads') || full.contains('barcelona')) {
       platform = 'Threads';
     } else if (full.contains('instagram') || full.contains('ig_')) {
       platform = 'Instagram';
@@ -85,16 +125,85 @@ class SocialFoldersService {
 
     final ext = p.extension(name);
     String sub = 'Belgeler';
-    const images = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.gif'};
-    const videos = {'.mp4', '.mkv', '.mov', '.webm', '.3gp'};
-    if (images.contains(ext)) {
-      sub = name.contains('story') || name.contains('hikaye') ? 'Hikayeler' : 'Fotograflar';
-    } else if (videos.contains(ext)) {
+    if (_imageExt.contains(ext)) {
+      sub = (name.contains('story') || name.contains('hikaye'))
+          ? 'Hikayeler'
+          : 'Fotograflar';
+    } else if (_videoExt.contains(ext)) {
       sub = 'Videolar';
     }
 
     final destDir = p.join(base, platform, sub);
     await Directory(destDir).create(recursive: true);
     return destDir;
+  }
+
+  /// Scan device for social media files and queue-copy into DosyaX/Sosyal.
+  /// Returns number of files enqueued. Skips files already present by name.
+  Future<int> scanAndImport({int maxFiles = 120}) async {
+    await ensureCreated();
+    final sources = await nativeSources();
+    var enqueued = 0;
+
+    for (final entry in sources.entries) {
+      final platform = entry.key;
+      for (final dirPath in entry.value) {
+        final dir = Directory(dirPath);
+        if (!dir.existsSync()) continue;
+
+        List<FileSystemEntity> entities;
+        try {
+          entities = dir.listSync(followLinks: false);
+        } catch (_) {
+          continue;
+        }
+
+        // Prefer newer files first
+        entities.sort((a, b) {
+          try {
+            return b.statSync().modified.compareTo(a.statSync().modified);
+          } catch (_) {
+            return 0;
+          }
+        });
+
+        for (final e in entities) {
+          if (enqueued >= maxFiles) return enqueued;
+          if (e is! File) continue;
+          final name = p.basename(e.path);
+          if (name.startsWith('.')) continue;
+          final ext = p.extension(name).toLowerCase();
+          if (!_imageExt.contains(ext) &&
+              !_videoExt.contains(ext) &&
+              ext != '.pdf' &&
+              ext != '.doc' &&
+              ext != '.docx' &&
+              ext != '.opus' &&
+              ext != '.ogg' &&
+              ext != '.mp3') {
+            continue;
+          }
+
+          final destDir = await suggestDestFor(e.path);
+          // Force platform from scan source
+          final forced = p.join(
+            await sosyalRoot,
+            platform,
+            p.basename(destDir),
+          );
+          await Directory(forced).create(recursive: true);
+          final destFile = p.join(forced, name);
+          if (File(destFile).existsSync()) continue;
+
+          TransferService.instance.enqueue(
+            sourcePath: e.path,
+            destDir: forced,
+            op: TransferOp.copy,
+          );
+          enqueued++;
+        }
+      }
+    }
+    return enqueued;
   }
 }
