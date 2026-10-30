@@ -106,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 hintText: 'Dosya veya klasor ara...',
                 prefixIcon: const Icon(Icons.search_rounded),
                 filled: true,
-                fillColor: cs.surfaceContainerHighest.withOpacity(0.5),
+                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
