@@ -35,9 +35,9 @@ jobs:
       - name: Recreate Android platform
         run: |
           rm -rf android
-          flutter create . --project-name dosyax --org com.lionapp1 --platforms=android
+          flutter create . --project-name dosyax --org com.dosyax --platforms=android
 
-      - name: Patch manifest icon + stable keystore
+      - name: Patch manifest icon + stable keystore + app id
         run: |
           python3 tooling/patch_android_ui.py
           python3 tooling/patch_android_signing.py
