@@ -13,11 +13,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _grid = true;
   String _query = '';
 
-  // Demo data — storage API bağlanınca değişecek
   final List<FileItem> _files = [
     FileItem(
       id: '1',
-      name: 'İndirilenler',
+      name: 'Indirilenler',
       kind: FileKind.folder,
       size: 0,
       path: '/Download',
@@ -104,10 +103,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
-                hintText: 'Dosya veya klasör ara...',
+                hintText: 'Dosya veya klasor ara...',
                 prefixIcon: const Icon(Icons.search_rounded),
                 filled: true,
-                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                fillColor: cs.surfaceContainerHighest.withOpacity(0.5),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
@@ -120,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _filtered.isEmpty
                 ? Center(
                     child: Text(
-                      'Sonuç yok',
+                      'Sonuc yok',
                       style: TextStyle(color: cs.onSurfaceVariant),
                     ),
                   )
@@ -148,11 +147,11 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Yükleme yakında')),
+            const SnackBar(content: Text('Yukleme yakinda')),
           );
         },
         icon: const Icon(Icons.upload_rounded),
-        label: const Text('Yükle'),
+        label: const Text('Yukle'),
       ),
     );
   }
