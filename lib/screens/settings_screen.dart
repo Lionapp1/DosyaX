@@ -84,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : 'Tam erisim yok',
                       ),
                       subtitle: const Text(
-                        'WhatsApp / Telegram / IG icin "Tum dosyalar" gerekli',
+                        'Android/data, OBB, WA, TG icin "Tum dosyalar" gerekli',
                       ),
                     ),
                     Padding(
@@ -92,21 +92,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton(
+                            child: OutlinedButton.icon(
                               onPressed: () async {
-                                await StorageService.instance.requestStorageAccess();
+                                await StorageService.instance
+                                    .requestStorageAccess();
                                 await _loadAccess();
                               },
-                              child: const Text('Izin iste'),
+                              icon: const Icon(Icons.lock_open, size: 18),
+                              label: const Text('Izin iste'),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: FilledButton(
+                            child: FilledButton.icon(
                               onPressed: () async {
-                                await StorageService.instance.openFullAccessSettings();
+                                await StorageService.instance
+                                    .openFullAccessSettings();
                               },
-                              child: const Text('Ayarlar'),
+                              icon: const Icon(Icons.settings, size: 18),
+                              label: const Text('Ayarlar'),
                             ),
                           ),
                         ],
@@ -126,24 +130,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: Icon(Icons.travel_explore_rounded, color: cs.primary),
+                      leading:
+                          Icon(Icons.travel_explore_rounded, color: cs.primary),
                       title: const Text('Medya dosyalarini tara ve getir'),
                       subtitle: const Text(
-                        'WA / TG / IG / Threads klasorlerini bulur, DosyaX/Sosyal altina kopyalar',
+                        'WA / TG / IG / Threads / X → DosyaX/Sosyal',
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: FilledButton.icon(
-                        onPressed: _scanning ? null : _scanSocial,
-                        icon: _scanning
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.download_rounded),
-                        label: Text(_scanning ? 'Taraniyor...' : 'Tara ve getir'),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _scanning ? null : _scanSocial,
+                          icon: _scanning
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_rounded),
+                          label: Text(
+                            _scanning ? 'Taraniyor...' : 'Tara ve getir',
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -212,6 +223,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: Text(
                     settings.hasPrivatePin ? 'PIN ayarli' : 'PIN henuz yok',
                   ),
+                  subtitle: const Text('Ozel sekmesinden yonetilir'),
                   trailing: settings.hasPrivatePin
                       ? TextButton(
                           onPressed: () async {
@@ -250,8 +262,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: Icon(Icons.info_outline_rounded),
                   title: Text('DosyaX'),
                   subtitle: Text(
-                    'v0.5.2 (52)\n'
-                    'Paket: com.lionapp1.dosyax',
+                    'v0.6.0 (60)\n'
+                    'Paket: com.dosyax.app\n'
+                    'Onceki paketle cakisma olmaz — yeni kurulum',
                   ),
                   isThreeLine: true,
                 ),
