@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Flutter Debug APK
+    name: Flutter APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -35,13 +35,20 @@ jobs:
       - name: Recreate Android platform
         run: |
           rm -rf android
-          flutter create . --project-name dosyax --org com.dosyax --platforms=android
+          flutter create . --project-name dosyax --org com.lionapp1.dosyax --platforms=android
 
-      - name: Patch AndroidManifest permissions
+      - name: Unique applicationId + label + permissions + icon
         run: |
+          # Unique package avoids INSTALL_FAILED conflicts with old builds
+          APP_BUILD="android/app/build.gradle.kts"
+          if [ -f "$APP_BUILD" ]; then
+            sed -i 's/namespace = .*/namespace = "com.lionapp1.dosyax"/' "$APP_BUILD"
+            sed -i 's/applicationId = .*/applicationId = "com.lionapp1.dosyax"/' "$APP_BUILD"
+          fi
+
           M="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/android:label="[^"]*"/android:label="DosyaX"/' "$M"
           if ! grep -q MANAGE_EXTERNAL_STORAGE "$M"; then
-            sed -i 's|<manifest |<manifest |' "$M"
             sed -i '/<manifest /a\    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' "$M"
             sed -i '/READ_EXTERNAL_STORAGE/a\    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />' "$M"
             sed -i '/WRITE_EXTERNAL_STORAGE/a\    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />' "$M"
@@ -52,8 +59,45 @@ jobs:
           if ! grep -q requestLegacyExternalStorage "$M"; then
             sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/' "$M"
           fi
-          echo "Manifest:"
-          head -n 25 "$M"
+
+          # Brand adaptive icon (vector)
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          cat > android/app/src/main/res/values/ic_launcher_colors.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#1D4ED8</color>
+          </resources>
+          EOF
+          cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M30,34h48a4,4 0 0,1 4,4v8H26v-8a4,4 0 0,1 4,-4z"/>
+              <path
+                  android:fillColor="#93C5FD"
+                  android:pathData="M26,50h56v28a6,6 0 0,1 -6,6H32a6,6 0 0,1 -6,-6z"/>
+              <path
+                  android:fillColor="#FBBF24"
+                  android:pathData="M40,62h28v6H40z"/>
+              <path
+                  android:fillColor="#FBBF24"
+                  android:pathData="M40,72h18v6H40z"/>
+          </vector>
+          EOF
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
 
       - name: Fix widget_test
         run: |
@@ -76,13 +120,13 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos || true
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build slim arm64 release APK
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
-      - name: Upload debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: dosyax-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: dosyax-apk-arm64
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           retention-days: 14
           if-no-files-found: error
