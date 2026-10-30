@@ -1,9 +1,46 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_settings.dart';
+import '../services/social_folders_service.dart';
+import '../services/storage_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool? _fullAccess;
+  bool _scanning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccess();
+  }
+
+  Future<void> _loadAccess() async {
+    final full = await StorageService.instance.hasFullAccess();
+    if (mounted) setState(() => _fullAccess = full);
+  }
+
+  Future<void> _scanSocial() async {
+    setState(() => _scanning = true);
+    final n = await SocialFoldersService.instance.scanAndImport(maxFiles: 120);
+    setState(() => _scanning = false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          n == 0
+              ? 'Yeni dosya bulunamadi (izin veya bos klasor)'
+              : '$n dosya kuyruga alindi — Sosyal klasorlere kopyalaniyor',
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,6 +62,94 @@ class SettingsScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
+              _sectionTitle(context, 'Erisim'),
+              Card(
+                elevation: 0,
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        _fullAccess == true
+                            ? Icons.verified_user_rounded
+                            : Icons.warning_amber_rounded,
+                        color: _fullAccess == true ? Colors.green : cs.error,
+                      ),
+                      title: Text(
+                        _fullAccess == true
+                            ? 'Tum dosyalara erisim acik'
+                            : 'Tam erisim yok',
+                      ),
+                      subtitle: const Text(
+                        'WhatsApp / Telegram / IG icin "Tum dosyalar" gerekli',
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                await StorageService.instance.requestStorageAccess();
+                                await _loadAccess();
+                              },
+                              child: const Text('Izin iste'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                await StorageService.instance.openFullAccessSettings();
+                              },
+                              child: const Text('Ayarlar'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _sectionTitle(context, 'Sosyal medya'),
+              Card(
+                elevation: 0,
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.travel_explore_rounded, color: cs.primary),
+                      title: const Text('Medya dosyalarini tara ve getir'),
+                      subtitle: const Text(
+                        'WA / TG / IG / Threads klasorlerini bulur, DosyaX/Sosyal altina kopyalar',
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: FilledButton.icon(
+                        onPressed: _scanning ? null : _scanSocial,
+                        icon: _scanning
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.download_rounded),
+                        label: Text(_scanning ? 'Taraniyor...' : 'Tara ve getir'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
               _sectionTitle(context, 'Gorunum'),
               Card(
                 elevation: 0,
@@ -86,9 +211,7 @@ class SettingsScreen extends StatelessWidget {
                 child: ListTile(
                   leading: Icon(Icons.lock_rounded, color: cs.primary),
                   title: Text(
-                    settings.hasPrivatePin
-                        ? 'PIN ayarli'
-                        : 'PIN henuz yok',
+                    settings.hasPrivatePin ? 'PIN ayarli' : 'PIN henuz yok',
                   ),
                   subtitle: const Text('Ozel sekmesinden PIN belirleyebilirsin'),
                   trailing: settings.hasPrivatePin
@@ -128,7 +251,11 @@ class SettingsScreen extends StatelessWidget {
                 child: const ListTile(
                   leading: Icon(Icons.info_outline_rounded),
                   title: Text('DosyaX'),
-                  subtitle: Text('v0.4.0 — hizli dosya yoneticisi'),
+                  subtitle: Text(
+                    'v0.5.1 (51)\n'
+                    'Paket: com.lionapp1.dosyax',
+                  ),
+                  isThreeLine: true,
                 ),
               ),
             ],
