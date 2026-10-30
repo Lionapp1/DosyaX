@@ -32,8 +32,9 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
-      - name: Ensure Android platform files
+      - name: Recreate Android platform (Flutter template AGP)
         run: |
+          rm -rf android
           flutter create . --project-name dosyax --org com.dosyax --platforms=android
 
       - name: Get dependencies
