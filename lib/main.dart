@@ -7,17 +7,15 @@ import 'services/storage_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
+  // Don't block first frame on heavy work
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const DosyaXApp());
 }
 
 class DosyaXApp extends StatelessWidget {
   const DosyaXApp({super.key});
+
+  static const _seed = Color(0xFF1D4ED8); // DosyaX blue
 
   @override
   Widget build(BuildContext context) {
@@ -28,18 +26,23 @@ class DosyaXApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
+          seedColor: _seed,
           brightness: Brightness.light,
         ),
-        appBarTheme: const AppBarTheme(centerTitle: false, elevation: 0),
+        visualDensity: VisualDensity.standard,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          },
+        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3B82F6),
+          seedColor: _seed,
           brightness: Brightness.dark,
         ),
-        appBarTheme: const AppBarTheme(centerTitle: false, elevation: 0),
+        visualDensity: VisualDensity.standard,
       ),
       home: const _Root(),
     );
@@ -59,7 +62,8 @@ class _RootState extends State<_Root> {
   @override
   void initState() {
     super.initState();
-    _check();
+    // Defer permission check one frame so splash paints immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
   }
 
   Future<void> _check() async {
@@ -69,9 +73,36 @@ class _RootState extends State<_Root> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     if (_granted == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: cs.surface,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.folder_rounded, size: 56, color: cs.primary),
+              const SizedBox(height: 16),
+              Text(
+                'DosyaX',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: cs.onSurface,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: cs.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
     if (_granted == false) {
