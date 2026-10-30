@@ -37,6 +37,20 @@ jobs:
           rm -rf android
           flutter create . --project-name dosyax --org com.dosyax --platforms=android
 
+      - name: Fix generated widget_test
+        run: |
+          cat > test/widget_test.dart << 'EOF'
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:dosyax/main.dart';
+
+          void main() {
+            testWidgets('DosyaX smoke test', (WidgetTester tester) async {
+              await tester.pumpWidget(const DosyaXApp());
+              expect(find.text('DosyaX'), findsOneWidget);
+            });
+          }
+          EOF
+
       - name: Get dependencies
         run: flutter pub get
 
